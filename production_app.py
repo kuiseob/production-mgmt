@@ -408,8 +408,88 @@ class ProductionApp:
         self.root.configure(bg=C['bg'])
         self.root.minsize(1100, 680)
 
-        self._show_main()
+        self._show_splash()
         self.root.mainloop()
+
+    # ========================================================
+    # 시작 화면 (서진정밀 인트로)
+    # ========================================================
+    def _show_splash(self):
+        for w in self.root.winfo_children(): w.destroy()
+        self.root.geometry("720x520")
+        self.root.resizable(False, False)
+        # 화면 중앙 배치
+        self.root.update_idletasks()
+        sw = self.root.winfo_screenwidth(); sh = self.root.winfo_screenheight()
+        x = (sw - 720) // 2; y = (sh - 520) // 2
+        self.root.geometry(f"720x520+{x}+{y}")
+
+        bg = tk.Frame(self.root, bg=C['primary_dark']); bg.pack(fill='both', expand=True)
+
+        # 상단 여백
+        tk.Frame(bg, bg=C['primary_dark'], height=70).pack()
+
+        # 로고 박스
+        logo_box = tk.Frame(bg, bg=C['primary_dark']); logo_box.pack()
+        tk.Label(logo_box, text="⚙", font=('Segoe UI Emoji', 84),
+                 fg=C['accent'], bg=C['primary_dark']).pack()
+
+        # 회사명 (한글)
+        tk.Label(bg, text="서 진 정 밀",
+                 font=('Malgun Gothic', 38, 'bold'),
+                 fg='white', bg=C['primary_dark']).pack(pady=(14, 4))
+
+        # 회사명 (영문)
+        tk.Label(bg, text=COMPANY,
+                 font=('Malgun Gothic', 13),
+                 fg='#80CBC4', bg=C['primary_dark']).pack()
+
+        # 구분선
+        tk.Frame(bg, bg='#80CBC4', height=2, width=320).pack(pady=18)
+
+        # 시스템명
+        tk.Label(bg, text="생산관리 시스템",
+                 font=('Malgun Gothic', 18, 'bold'),
+                 fg='white', bg=C['primary_dark']).pack()
+        tk.Label(bg, text="MTO Production Management System",
+                 font=('Malgun Gothic', 10),
+                 fg='#B0BEC5', bg=C['primary_dark']).pack(pady=(2, 0))
+
+        # 로딩 점
+        self._splash_dots = tk.Label(bg, text="●  ○  ○",
+                                     font=('Malgun Gothic', 14),
+                                     fg=C['accent'], bg=C['primary_dark'])
+        self._splash_dots.pack(pady=(28, 6))
+
+        tk.Label(bg, text="시스템 시작 중...",
+                 font=('Malgun Gothic', 10),
+                 fg='#B0BEC5', bg=C['primary_dark']).pack()
+
+        # 하단 시간 / 버전
+        bot = tk.Frame(bg, bg=C['primary_dark']); bot.pack(side='bottom', fill='x', pady=14)
+        tk.Label(bot, text=datetime.now().strftime("%Y-%m-%d  %H:%M"),
+                 font=('Malgun Gothic', 9), fg='#78909C',
+                 bg=C['primary_dark']).pack()
+
+        # 점 애니메이션
+        self._splash_step = 0
+        def _animate():
+            patterns = ["●  ○  ○", "○  ●  ○", "○  ○  ●", "○  ●  ○"]
+            try:
+                self._splash_dots.config(text=patterns[self._splash_step % 4])
+            except tk.TclError:
+                return  # 위젯이 이미 파괴된 경우
+            self._splash_step += 1
+            self.root.after(280, _animate)
+        _animate()
+
+        # 클릭하면 즉시 진입
+        for w in [bg]:
+            w.bind('<Button-1>', lambda e: self._show_main())
+        self.root.bind('<Key>', lambda e: self._show_main())
+
+        # 2.4초 후 자동 진입
+        self.root.after(2400, self._show_main)
 
     # ========================================================
     # 로그인
