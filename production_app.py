@@ -366,25 +366,152 @@ def page_header(parent, title, sub=''):
         make_label(wrap, sub, size=9, color=C['secondary'], bg=C['white']).pack(side='left')
     tk.Frame(parent, bg=C['primary'], height=2).pack(fill='x', padx=20, pady=(4, 0))
 
+# ============================================================
+# 프린터 유틸 (HP, 삼성 등 Windows 설치된 모든 프린터 지원)
+# ============================================================
+def list_windows_printers():
+    """Windows에 설치된 프린터 목록. HP / 삼성(Samsung) / 기타 모든 프린터 자동 인식."""
+    try:
+        import win32print
+        names = [p[2] for p in win32print.EnumPrinters(
+            win32print.PRINTER_ENUM_LOCAL | win32print.PRINTER_ENUM_CONNECTIONS)]
+        default = win32print.GetDefaultPrinter()
+        return names, default
+    except Exception:
+        return [], None
+
+
+def print_file_to(printer_name, file_path):
+    """특정 프린터로 파일을 직접 출력 (HP / Samsung 등)."""
+    try:
+        import win32api
+        win32api.ShellExecute(0, "printto", file_path, f'"{printer_name}"', ".", 0)
+        return True, None
+    except Exception as e:
+        return False, str(e)
+
+
 def open_print_preview(content, title="출력"):
+    """HTML 미리보기 + 인쇄 버튼. 브라우저 인쇄 대화상자에서 HP/삼성 등 어떤 프린터도 선택 가능."""
     html = f"""<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>{title}</title>
+<html><head><meta charset="utf-8"><title>{title} - SEO JIN PRECISION</title>
 <style>
-  body{{font-family:'Malgun Gothic',sans-serif;margin:30px;font-size:11px}}
-  h2{{color:#00695C;border-bottom:2px solid #00695C;padding-bottom:6px}}
-  pre{{white-space:pre-wrap;font-family:'Courier New','Malgun Gothic';font-size:10px;
-       background:#fafafa;padding:16px;border:1px solid #ccc}}
-  .pb{{background:#00695C;color:white;border:none;padding:8px 24px;
-       font-size:13px;cursor:pointer;border-radius:3px;margin-bottom:14px}}
-  @media print{{.pb{{display:none}}}}
+  @page {{ size: A4; margin: 15mm 12mm; }}
+  body{{font-family:'Malgun Gothic','Nanum Gothic',sans-serif;margin:20px;font-size:11px;color:#222}}
+  .hdr{{border-bottom:3px solid #00695C;padding-bottom:10px;margin-bottom:14px;
+        display:flex;justify-content:space-between;align-items:flex-end}}
+  .hdr .co{{font-size:14px;color:#00695C;font-weight:bold;letter-spacing:1px}}
+  .hdr .tl{{font-size:22px;font-weight:bold;color:#263238}}
+  .hdr .dt{{font-size:10px;color:#666}}
+  pre{{white-space:pre-wrap;font-family:'Consolas','D2Coding','Courier New','Malgun Gothic';
+       font-size:10.5px;line-height:1.5;background:#fff;padding:10px;border:1px solid #ccc;
+       -webkit-print-color-adjust:exact;print-color-adjust:exact}}
+  .toolbar{{position:sticky;top:0;background:#fff;padding:10px 0;border-bottom:1px solid #eee;
+           margin-bottom:14px;display:flex;gap:8px;flex-wrap:wrap;z-index:10}}
+  .pb{{background:#00695C;color:white;border:none;padding:9px 22px;
+       font-size:13px;font-weight:bold;cursor:pointer;border-radius:3px}}
+  .pb:hover{{background:#004D40}}
+  .pb.sec{{background:#FF6F00}}
+  .pb.sec:hover{{background:#E65100}}
+  .info{{background:#ECEFF1;padding:8px 14px;border-left:4px solid #00695C;
+        font-size:11px;color:#455A64;margin-bottom:12px;border-radius:2px}}
+  @media print{{
+    .toolbar,.info{{display:none !important}}
+    body{{margin:0}}
+    pre{{border:none;padding:0;background:#fff;font-size:10pt}}
+    .hdr{{break-inside:avoid}}
+  }}
 </style></head><body>
-<button class="pb" onclick="window.print()">인쇄 (Ctrl+P)</button>
-<h2>{title}</h2>
+<div class="toolbar">
+  <button class="pb" onclick="window.print()">🖨  인쇄 (Ctrl+P)</button>
+  <button class="pb sec" onclick="window.close()">✕  닫기</button>
+</div>
+<div class="info">
+  💡 인쇄 대화상자에서 <b>HP</b>, <b>Samsung</b> 등 설치된 프린터를 선택할 수 있습니다.
+     용지는 <b>A4</b>로 자동 설정됩니다.
+</div>
+<div class="hdr">
+  <div>
+    <div class="co">SEO JIN PRECISION CO.</div>
+    <div class="tl">{title}</div>
+  </div>
+  <div class="dt">출력일시: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</div>
+</div>
 <pre>{content}</pre>
 </body></html>"""
     tmp = tempfile.NamedTemporaryFile(mode='w', suffix='.html', delete=False, encoding='utf-8')
     tmp.write(html); tmp.close()
     webbrowser.open(f'file://{tmp.name}')
+    return tmp.name
+
+
+def open_printer_dialog(content, title="출력", parent=None):
+    """설치된 프린터 목록(HP/삼성 등)에서 선택해 직접 인쇄 — Windows 전용.
+    win32print 없으면 기본 브라우저 미리보기로 fallback."""
+    html_path = open_print_preview(content, title)
+
+    if sys.platform != 'win32':
+        return  # macOS/Linux: 브라우저 인쇄로 처리
+
+    printers, default = list_windows_printers()
+    if not printers:
+        return  # win32print 미설치 — 브라우저 인쇄만 사용
+
+    # 프린터 선택 다이얼로그
+    dlg = tk.Toplevel(parent)
+    dlg.title("프린터 선택 — HP / Samsung / 기타")
+    dlg.geometry("460x340")
+    dlg.configure(bg='white')
+    dlg.transient(parent); dlg.grab_set()
+
+    tk.Label(dlg, text="🖨  프린터 선택",
+             font=('Malgun Gothic', 14, 'bold'),
+             fg='#00695C', bg='white').pack(pady=(18, 4))
+    tk.Label(dlg, text=f"출력 문서: {title}",
+             font=('Malgun Gothic', 10), fg='#455A64', bg='white').pack()
+
+    # HP / Samsung 구분 아이콘
+    def _brand(name):
+        low = name.lower()
+        if 'hp' in low or 'hewlett' in low or 'laserjet' in low or 'officejet' in low or 'deskjet' in low:
+            return '🖨 HP'
+        if 'samsung' in low or 'xpress' in low or 'scx' in low or 'clp' in low or 'ml-' in low:
+            return '🖨 Samsung'
+        return '🖨'
+
+    listf = tk.Frame(dlg, bg='white'); listf.pack(fill='both', expand=True, padx=24, pady=12)
+    lb = tk.Listbox(listf, font=('Malgun Gothic', 11), height=8,
+                    selectbackground='#00695C', selectforeground='white',
+                    relief='flat', highlightthickness=1, highlightbackground='#CFD8DC')
+    sb = ttk.Scrollbar(listf, command=lb.yview); lb.config(yscrollcommand=sb.set)
+    sb.pack(side='right', fill='y'); lb.pack(side='left', fill='both', expand=True)
+
+    for p in printers:
+        mark = '  ★ (기본)' if p == default else ''
+        lb.insert('end', f"  {_brand(p)}   {p}{mark}")
+    if default and default in printers:
+        lb.selection_set(printers.index(default))
+        lb.see(printers.index(default))
+
+    btnf = tk.Frame(dlg, bg='white'); btnf.pack(fill='x', padx=24, pady=(0, 18))
+    def _do_print():
+        sel = lb.curselection()
+        if not sel:
+            messagebox.showwarning("선택", "프린터를 선택하세요."); return
+        pname = printers[sel[0]]
+        ok, err = print_file_to(pname, html_path)
+        if ok:
+            messagebox.showinfo("인쇄 전송", f"'{pname}'(으)로 인쇄를 전송했습니다.")
+            dlg.destroy()
+        else:
+            messagebox.showerror("인쇄 실패", f"프린터: {pname}\n\n{err}")
+
+    tk.Button(btnf, text="인쇄", font=('Malgun Gothic', 11, 'bold'),
+              bg='#00695C', fg='white', relief='flat', cursor='hand2',
+              padx=24, pady=8, command=_do_print).pack(side='right', padx=4)
+    tk.Button(btnf, text="취소", font=('Malgun Gothic', 11),
+              bg='#CFD8DC', fg='#263238', relief='flat', cursor='hand2',
+              padx=18, pady=8, command=dlg.destroy).pack(side='right', padx=4)
 
 
 # ============================================================
