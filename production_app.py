@@ -764,6 +764,7 @@ class ProductionApp:
             ('shipment',   '출하 관리',    '#FF7043', '🚚'),
             None,
             ('report',     '보고서 / 출력','#FFCA28', '📈'),
+            ('statistics', '통계 (일/월/년)','#7E57C2', '📊'),
             None,
         ]
         if self.user['role'] == 'admin':
@@ -836,6 +837,7 @@ class ProductionApp:
             'inspection': self._pg_inspection,
             'shipment':   self._pg_shipment,
             'report':     self._pg_report,
+            'statistics': self._pg_statistics,
             'items':      self._pg_items,
             'customers':  self._pg_customers,
             'equipments': self._pg_equipments,
@@ -1811,6 +1813,305 @@ class ProductionApp:
                 messagebox.showinfo("저장 완료", f"저장됨:\n{path}")
 
         _draw()
+
+    # ========================================================
+    # 통계 (일별 / 월별 / 연간) — CSV 저장 가능
+    # ========================================================
+    def _pg_statistics(self):
+        p = self.page_area
+        page_header(p, "통계 (일별 / 월별 / 연간)", "  생산 / 품질 / 출하 통계 집계 및 저장")
+
+        # 컨트롤 바
+        ctrl = tk.Frame(p, bg='white', padx=14, pady=12)
+        ctrl.pack(fill='x', padx=20, pady=(8, 4))
+
+        tk.Label(ctrl, text="기간:", font=('Malgun Gothic', 11, 'bold'),
+                 bg='white', fg=C['primary']).pack(side='left', padx=(4, 6))
+        period_var = tk.StringVar(value='일별')
+        period_cb = ttk.Combobox(ctrl, textvariable=period_var,
+                                 values=['일별', '월별', '연간'],
+                                 state='readonly', width=8,
+                                 font=('Malgun Gothic', 11))
+        period_cb.pack(side='left', padx=4)
+
+        tk.Label(ctrl, text="시작:", font=('Malgun Gothic', 10),
+                 bg='white').pack(side='left', padx=(16, 4))
+        from_var = tk.StringVar(value=(datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d'))
+        tk.Entry(ctrl, textvariable=from_var, width=12,
+                 font=('Malgun Gothic', 11)).pack(side='left', padx=2)
+
+        tk.Label(ctrl, text="종료:", font=('Malgun Gothic', 10),
+                 bg='white').pack(side='left', padx=(10, 4))
+        to_var = tk.StringVar(value=datetime.now().strftime('%Y-%m-%d'))
+        tk.Entry(ctrl, textvariable=to_var, width=12,
+                 font=('Malgun Gothic', 11)).pack(side='left', padx=2)
+
+        kind_var = tk.StringVar(value='생산')
+        tk.Label(ctrl, text="구분:", font=('Malgun Gothic', 10),
+                 bg='white').pack(side='left', padx=(16, 4))
+        ttk.Combobox(ctrl, textvariable=kind_var,
+                     values=['생산', '품질', '출하', '설비별', '고객사별'],
+                     state='readonly', width=10,
+                     font=('Malgun Gothic', 11)).pack(side='left', padx=2)
+
+        # 결과 요약 라벨
+        sum_frame = tk.Frame(p, bg=C['bg'])
+        sum_frame.pack(fill='x', padx=20, pady=(6, 4))
+        sum_lbls = {}
+        for k, color in [('총 행', '#455A64'), ('합계', '#00695C'),
+                         ('불량합계', '#EF5350'), ('불량률', '#FF6F00')]:
+            box = tk.Frame(sum_frame, bg='white', padx=14, pady=10)
+            box.pack(side='left', expand=True, fill='x', padx=4)
+            tk.Label(box, text=k, font=('Malgun Gothic', 10),
+                     fg='#90A4AE', bg='white').pack()
+            l = tk.Label(box, text='-', font=('Malgun Gothic', 16, 'bold'),
+                         fg=color, bg='white')
+            l.pack()
+            sum_lbls[k] = l
+
+        # 결과 테이블
+        tf = tk.Frame(p, bg='white'); tf.pack(fill='both', expand=True, padx=20, pady=(4, 12))
+        cols_set = {
+            '생산':   ('기간', '작업건수', '양품', '불량', '불량률(%)'),
+            '품질':   ('기간', '검사건수', '합격', '불합격', '불합격률(%)'),
+            '출하':   ('기간', '출하건수', '출하수량', '거래처수', '-'),
+            '설비별': ('기간', '설비코드', '설비명', '생산량', '불량'),
+            '고객사별': ('기간', '고객사', '주문건수', '주문수량', '-'),
+        }
+        widths = (140, 120, 120, 120, 140)
+
+        cols = cols_set['생산']
+        tree = ttk.Treeview(tf, columns=cols, show='headings', height=14)
+        for c, w in zip(cols, widths):
+            tree.heading(c, text=c); tree.column(c, width=w, anchor='center')
+        sy = ttk.Scrollbar(tf, orient='vertical', command=tree.yview)
+        sx = ttk.Scrollbar(tf, orient='horizontal', command=tree.xview)
+        tree.configure(yscrollcommand=sy.set, xscrollcommand=sx.set)
+        sy.pack(side='right', fill='y'); sx.pack(side='bottom', fill='x')
+        tree.pack(fill='both', expand=True)
+
+        current_data = {'rows': [], 'cols': cols, 'meta': {}}
+
+        def _period_format(p):
+            if period_var.get() == '일별':   return "strftime('%Y-%m-%d', {0})".format(p)
+            if period_var.get() == '월별':   return "strftime('%Y-%m', {0})".format(p)
+            return "strftime('%Y', {0})"
+
+        def _query():
+            cols = cols_set[kind_var.get()]
+            tree.config(columns=cols)
+            for c, w in zip(cols, widths):
+                tree.heading(c, text=c); tree.column(c, width=w, anchor='center')
+            for r in tree.get_children(): tree.delete(r)
+
+            f = from_var.get().strip(); t = to_var.get().strip()
+            kind = kind_var.get()
+            rows = []
+            try:
+                if kind == '생산':
+                    pf = _period_format('pr.work_date')
+                    rows = self.db.query(f"""
+                        SELECT {pf} AS period,
+                               COUNT(DISTINCT pr.wo_id),
+                               COALESCE(SUM(pr.qty),0),
+                               COALESCE(SUM(pr.defect_qty),0)
+                        FROM production_records pr
+                        WHERE pr.work_date BETWEEN ? AND ?
+                        GROUP BY period ORDER BY period
+                    """, (f, t))
+                    data = []
+                    tot_g = tot_d = 0
+                    for r in rows:
+                        g, d = r[2], r[3]; tot_g += g; tot_d += d
+                        rate = (d * 100 / (g + d)) if (g + d) else 0
+                        data.append((r[0], r[1], g, d, f"{rate:.2f}"))
+
+                elif kind == '품질':
+                    pf = _period_format('insp_date')
+                    rows = self.db.query(f"""
+                        SELECT {pf} AS period,
+                               COUNT(*),
+                               COALESCE(SUM(pass_qty),0),
+                               COALESCE(SUM(fail_qty),0)
+                        FROM inspections
+                        WHERE insp_date BETWEEN ? AND ?
+                        GROUP BY period ORDER BY period
+                    """, (f, t))
+                    data = []
+                    tot_g = tot_d = 0
+                    for r in rows:
+                        ps, fl = r[2], r[3]; tot_g += ps; tot_d += fl
+                        rate = (fl * 100 / (ps + fl)) if (ps + fl) else 0
+                        data.append((r[0], r[1], ps, fl, f"{rate:.2f}"))
+
+                elif kind == '출하':
+                    pf = _period_format('sh.ship_date')
+                    rows = self.db.query(f"""
+                        SELECT {pf} AS period,
+                               COUNT(*),
+                               COALESCE(SUM(sh.quantity),0),
+                               COUNT(DISTINCT o.customer_id)
+                        FROM shipments sh
+                        LEFT JOIN orders o ON sh.order_id=o.id
+                        WHERE sh.ship_date BETWEEN ? AND ?
+                        GROUP BY period ORDER BY period
+                    """, (f, t))
+                    data = [(r[0], r[1], r[2], r[3], '-') for r in rows]
+                    tot_g = sum(r[2] for r in rows); tot_d = 0
+
+                elif kind == '설비별':
+                    pf = _period_format('pr.work_date')
+                    rows = self.db.query(f"""
+                        SELECT {pf} AS period, e.code, e.name,
+                               COALESCE(SUM(pr.qty),0),
+                               COALESCE(SUM(pr.defect_qty),0)
+                        FROM production_records pr
+                        LEFT JOIN equipments e ON pr.equipment_id=e.id
+                        WHERE pr.work_date BETWEEN ? AND ?
+                        GROUP BY period, e.id
+                        ORDER BY period, SUM(pr.qty) DESC
+                    """, (f, t))
+                    data = [(r[0], r[1] or '-', r[2] or '-', r[3], r[4]) for r in rows]
+                    tot_g = sum(r[3] for r in rows); tot_d = sum(r[4] for r in rows)
+
+                else:  # 고객사별
+                    pf = _period_format('o.order_date')
+                    rows = self.db.query(f"""
+                        SELECT {pf} AS period, c.name,
+                               COUNT(*), COALESCE(SUM(o.quantity),0)
+                        FROM orders o LEFT JOIN customers c ON o.customer_id=c.id
+                        WHERE o.order_date BETWEEN ? AND ?
+                        GROUP BY period, c.id
+                        ORDER BY period, SUM(o.quantity) DESC
+                    """, (f, t))
+                    data = [(r[0], r[1] or '-', r[2], r[3], '-') for r in rows]
+                    tot_g = sum(r[3] for r in rows); tot_d = 0
+            except Exception as e:
+                messagebox.showerror("조회 오류", str(e)); return
+
+            for r in data:
+                tree.insert('', 'end', values=r)
+
+            current_data['rows'] = data
+            current_data['cols'] = cols
+            current_data['meta'] = {
+                'period': period_var.get(), 'kind': kind,
+                'from': f, 'to': t,
+            }
+            sum_lbls['총 행'].config(text=f"{len(data):,}")
+            sum_lbls['합계'].config(text=f"{tot_g:,}")
+            sum_lbls['불량합계'].config(text=f"{tot_d:,}")
+            rate = (tot_d * 100 / (tot_g + tot_d)) if (tot_g + tot_d) else 0
+            sum_lbls['불량률'].config(text=f"{rate:.2f} %")
+
+        def _save_csv():
+            if not current_data['rows']:
+                messagebox.showwarning("저장", "조회된 데이터가 없습니다."); return
+            from tkinter import filedialog
+            import csv
+            meta = current_data['meta']
+            default_name = f"통계_{meta['kind']}_{meta['period']}_{meta['from']}_{meta['to']}.csv"
+            path = filedialog.asksaveasfilename(
+                defaultextension='.csv',
+                filetypes=[('CSV (Excel)', '*.csv'), ('모든 파일', '*.*')],
+                initialfile=default_name)
+            if not path: return
+            try:
+                with open(path, 'w', newline='', encoding='utf-8-sig') as f:
+                    w = csv.writer(f)
+                    w.writerow([f"# SEO JIN PRECISION CO. - 통계 보고서"])
+                    w.writerow([f"# 구분: {meta['kind']}  /  기간: {meta['period']}"
+                                f"  /  {meta['from']} ~ {meta['to']}"
+                                f"  /  생성: {datetime.now().strftime('%Y-%m-%d %H:%M')}"])
+                    w.writerow([])
+                    w.writerow(current_data['cols'])
+                    for r in current_data['rows']:
+                        w.writerow(r)
+                    w.writerow([])
+                    w.writerow(['총 행', sum_lbls['총 행'].cget('text')])
+                    w.writerow(['합계',  sum_lbls['합계'].cget('text')])
+                    w.writerow(['불량합계', sum_lbls['불량합계'].cget('text')])
+                    w.writerow(['불량률', sum_lbls['불량률'].cget('text')])
+                messagebox.showinfo("저장 완료", f"CSV 파일로 저장되었습니다.\n\n{path}")
+            except Exception as e:
+                messagebox.showerror("저장 오류", str(e))
+
+        def _save_print():
+            if not current_data['rows']:
+                messagebox.showwarning("출력", "조회된 데이터가 없습니다."); return
+            meta = current_data['meta']
+            W = 100
+            lines = [
+                "=" * W,
+                f"{COMPANY:^{W}}",
+                f"{'통 계 보 고 서 (' + meta['kind'] + ' / ' + meta['period'] + ')':^{W}}",
+                f"기간: {meta['from']} ~ {meta['to']}    출력: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+                "=" * W,
+                "  ".join(f"{c:<14}" for c in current_data['cols']),
+                "-" * W,
+            ]
+            for r in current_data['rows']:
+                lines.append("  ".join(f"{str(v):<14}" for v in r))
+            lines += [
+                "-" * W,
+                f"  총 행: {sum_lbls['총 행'].cget('text')}    "
+                f"합계: {sum_lbls['합계'].cget('text')}    "
+                f"불량: {sum_lbls['불량합계'].cget('text')}    "
+                f"불량률: {sum_lbls['불량률'].cget('text')}",
+                "=" * W,
+            ]
+            open_print_preview('\n'.join(lines), f"통계_{meta['kind']}_{meta['period']}")
+
+        def _save_graph():
+            if not HAS_MPL:
+                messagebox.showerror("그래프 저장",
+                    "matplotlib이 필요합니다.\npip install matplotlib"); return
+            if not current_data['rows']:
+                messagebox.showwarning("그래프", "조회된 데이터가 없습니다."); return
+            from tkinter import filedialog
+            meta = current_data['meta']
+            data = current_data['rows']
+            # 단순 막대그래프: 첫 컬럼 = x, 합계 위치 컬럼 = y
+            kind = meta['kind']
+            if kind in ('생산', '품질'):
+                xs = [r[0] for r in data]; good = [r[2] for r in data]; bad = [r[3] for r in data]
+            elif kind == '출하':
+                xs = [r[0] for r in data]; good = [r[2] for r in data]; bad = [0]*len(data)
+            elif kind == '설비별':
+                xs = [f"{r[0]} {r[1]}" for r in data]; good = [r[3] for r in data]; bad = [r[4] for r in data]
+            else:  # 고객사별
+                xs = [f"{r[0]} {r[1]}" for r in data]; good = [r[3] for r in data]; bad = [0]*len(data)
+
+            fig = Figure(figsize=(11, 5.5), dpi=120)
+            ax = fig.add_subplot(111)
+            x = range(len(xs))
+            ax.bar(x, good, label='양품/실적', color='#26A69A')
+            ax.bar(x, bad, bottom=good, label='불량', color='#EF5350')
+            ax.set_xticks(list(x))
+            ax.set_xticklabels(xs, rotation=45, ha='right', fontsize=8)
+            ax.set_title(f"{kind} 통계 ({meta['period']}) {meta['from']}~{meta['to']}",
+                         fontsize=13, fontweight='bold')
+            ax.grid(axis='y', linestyle='--', alpha=0.5)
+            if any(bad): ax.legend()
+            fig.tight_layout()
+
+            default_name = f"통계_{kind}_{meta['period']}_{meta['from']}_{meta['to']}.png"
+            path = filedialog.asksaveasfilename(
+                defaultextension='.png',
+                filetypes=[('PNG 이미지', '*.png')],
+                initialfile=default_name)
+            if path:
+                fig.savefig(path, dpi=150, bbox_inches='tight')
+                messagebox.showinfo("저장 완료", f"그래프 저장됨:\n{path}")
+
+        # 버튼들
+        make_btn(ctrl, "🔍 조회", _query, color=C['primary']).pack(side='left', padx=(20, 4))
+        make_btn(ctrl, "💾 CSV 저장", _save_csv, color=C['accent']).pack(side='left', padx=4)
+        make_btn(ctrl, "🖨 인쇄", _save_print).pack(side='left', padx=4)
+        make_btn(ctrl, "📊 그래프 저장", _save_graph).pack(side='left', padx=4)
+
+        period_cb.bind('<<ComboboxSelected>>', lambda e: _query())
+        _query()
 
     # ========================================================
     # 품목 관리 (메뉴에서 제거됨, 호환용으로 보존)
