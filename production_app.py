@@ -7,6 +7,19 @@ MTO (Make-to-Order) Production Management System
 
 import tkinter as tk
 from tkinter import ttk, messagebox
+
+# matplotlib (그래프) - 설치되어 있지 않으면 그래프 메뉴만 비활성
+try:
+    import matplotlib
+    matplotlib.use('TkAgg')
+    import matplotlib.pyplot as plt
+    from matplotlib.figure import Figure
+    from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
+    matplotlib.rcParams['font.family'] = 'Malgun Gothic'
+    matplotlib.rcParams['axes.unicode_minus'] = False
+    HAS_MPL = True
+except Exception:
+    HAS_MPL = False
 import sqlite3
 import hashlib
 import os
@@ -380,7 +393,13 @@ def open_print_preview(content, title="출력"):
 class ProductionApp:
     def __init__(self):
         self.db = DB()
-        self.user = None
+        # 로그인 없이 관리자 권한으로 자동 진입
+        admin_rows = self.db.query("SELECT * FROM users WHERE username='admin'")
+        if admin_rows:
+            self.user = dict(admin_rows[0])
+        else:
+            self.user = {'id': 0, 'username': 'admin', 'name': '관리자',
+                         'team': '관리부', 'role': 'admin'}
         setup_treeview_style()
 
         self.root = tk.Tk()
@@ -389,7 +408,7 @@ class ProductionApp:
         self.root.configure(bg=C['bg'])
         self.root.minsize(1100, 680)
 
-        self._show_login()
+        self._show_main()
         self.root.mainloop()
 
     # ========================================================
@@ -469,12 +488,8 @@ class ProductionApp:
         tk.Label(hdr, text=f"  {COMPANY}  |  생산관리 시스템",
                  font=('Malgun Gothic', 14, 'bold'),
                  fg='white', bg=C['header_bg']).pack(side='left', padx=10)
-        tk.Button(hdr, text="로그아웃", font=('Malgun Gothic', 9),
-                  bg='#455A64', fg='white', relief='flat',
-                  cursor='hand2', padx=12,
-                  command=self._show_login).pack(side='right', padx=8, pady=14)
         tk.Label(hdr, text=f"{self.user['name']}  ({self.user['team']})",
-                 font=('Malgun Gothic', 10), fg='#80CBC4', bg=C['header_bg']).pack(side='right', padx=6)
+                 font=('Malgun Gothic', 10), fg='#80CBC4', bg=C['header_bg']).pack(side='right', padx=14)
         self._time_lbl = tk.Label(hdr, font=('Malgun Gothic', 9), fg='#B0BEC5', bg=C['header_bg'])
         self._time_lbl.pack(side='right', padx=16)
         self._tick()
@@ -501,7 +516,6 @@ class ProductionApp:
         ]
         if self.user['role'] == 'admin':
             menus += [
-                ('items',      '품목 관리',    '#5C6BC0', '📦'),
                 ('customers',  '고객사 관리',  '#26C6DA', '🏢'),
                 ('equipments', '설비 관리',    '#8D6E63', '🏭'),
                 ('users',      '사용자 관리',  '#EC407A', '👤'),
@@ -526,7 +540,7 @@ class ProductionApp:
             bar.pack(side='left', fill='y')
 
             btn = tk.Button(row, text=f"  {emoji}   {label}",
-                            font=('Malgun Gothic', 18, 'bold'),
+                            font=('Malgun Gothic', 16, 'bold'),
                             fg='#000000', bg=C['sidebar_bg'],
                             relief='flat', anchor='w', cursor='hand2', pady=14,
                             activebackground=color, activeforeground='black',
@@ -1187,6 +1201,7 @@ class ProductionApp:
         _card("생산일보",     self._rpt_daily)
         _card("거래명세서",   self._rpt_invoice)
         _card("설비별 가동", self._rpt_equipment)
+        _card("📊 그래프 분석", self._rpt_graph)
 
         tk.Frame(p, bg=C['border'], height=1).pack(fill='x', padx=20, pady=4)
         make_label(p, " 미리보기", bold=True, size=10, bg=C['bg']).pack(anchor='w', padx=22)
@@ -1337,7 +1352,213 @@ class ProductionApp:
         open_print_preview(content, "설비별 가동현황")
 
     # ========================================================
-    # 품목 관리
+    # 그래프 분석
+    # ========================================================
+    def _rpt_graph(self):
+        if not HAS_MPL:
+            messagebox.showerror("matplotlib 미설치",
+                "그래프 기능을 사용하려면 matplotlib을 설치해야 합니다.\n\n"
+                "터미널에서 실행:\n  pip install matplotlib")
+            return
+
+        win = tk.Toplevel(self.root)
+        win.title("그래프 분석")
+        win.geometry("1200x780")
+        win.configure(bg=C['bg'])
+
+        # 상단 컨트롤
+        top = tk.Frame(win, bg=C['header_bg'], height=56); top.pack(fill='x'); top.pack_propagate(False)
+        tk.Label(top, text="📊  생산 / 품질 / 설비 그래프 분석",
+                 font=('Malgun Gothic', 14, 'bold'),
+                 fg='white', bg=C['header_bg']).pack(side='left', padx=20)
+
+        kind_var = tk.StringVar(value='일별 생산량 추이')
+        kinds = [
+            '일별 생산량 추이',
+            '공정별 생산 비중',
+            '설비별 생산량 TOP 10',
+            '일별 불량률 추이',
+            '수주 상태 현황',
+            '고객사별 수주 금액(수량)',
+        ]
+        tk.Label(top, text="유형:", font=('Malgun Gothic', 10),
+                 fg='white', bg=C['header_bg']).pack(side='left', padx=(20, 6))
+        cb = ttk.Combobox(top, textvariable=kind_var, values=kinds,
+                          state='readonly', width=28, font=('Malgun Gothic', 10))
+        cb.pack(side='left', padx=4)
+
+        # 그래프 영역
+        body = tk.Frame(win, bg='white'); body.pack(fill='both', expand=True, padx=10, pady=10)
+
+        fig = Figure(figsize=(11, 6.5), dpi=100, facecolor='white')
+        canvas = FigureCanvasTkAgg(fig, master=body)
+        canvas.get_tk_widget().pack(fill='both', expand=True)
+
+        toolbar_frame = tk.Frame(win, bg=C['bg']); toolbar_frame.pack(fill='x')
+        NavigationToolbar2Tk(canvas, toolbar_frame).update()
+
+        def _draw():
+            fig.clear()
+            kind = kind_var.get()
+            ax = fig.add_subplot(111)
+
+            if kind == '일별 생산량 추이':
+                rows = self.db.query("""
+                    SELECT work_date, SUM(qty), SUM(defect_qty)
+                    FROM production_records
+                    WHERE work_date >= date('now','-30 day')
+                    GROUP BY work_date ORDER BY work_date
+                """)
+                if not rows:
+                    ax.text(0.5, 0.5, '데이터 없음', ha='center', va='center',
+                            fontsize=18, color='#999', transform=ax.transAxes)
+                else:
+                    dates = [r[0] for r in rows]
+                    good = [r[1] or 0 for r in rows]
+                    bad  = [r[2] or 0 for r in rows]
+                    x = range(len(dates))
+                    ax.bar(x, good, label='양품', color='#26A69A')
+                    ax.bar(x, bad, bottom=good, label='불량', color='#EF5350')
+                    ax.set_xticks(list(x))
+                    ax.set_xticklabels(dates, rotation=45, ha='right', fontsize=8)
+                    ax.set_ylabel('수량')
+                    ax.set_title('최근 30일 일별 생산량', fontsize=14, fontweight='bold')
+                    ax.legend(); ax.grid(axis='y', linestyle='--', alpha=0.5)
+
+            elif kind == '공정별 생산 비중':
+                rows = self.db.query("""
+                    SELECT wo.process, SUM(pr.qty)
+                    FROM production_records pr
+                    LEFT JOIN work_orders wo ON pr.wo_id=wo.id
+                    GROUP BY wo.process
+                """)
+                rows = [r for r in rows if r[0] and r[1]]
+                if not rows:
+                    ax.text(0.5, 0.5, '데이터 없음', ha='center', va='center',
+                            fontsize=18, color='#999', transform=ax.transAxes)
+                else:
+                    labels = [r[0] for r in rows]
+                    sizes  = [r[1] for r in rows]
+                    colors = ['#26A69A', '#FFA726', '#5C6BC0', '#EC407A'][:len(rows)]
+                    ax.pie(sizes, labels=labels, colors=colors, autopct='%1.1f%%',
+                           startangle=90, textprops={'fontsize': 12})
+                    ax.set_title('공정별 누적 생산 비중', fontsize=14, fontweight='bold')
+
+            elif kind == '설비별 생산량 TOP 10':
+                rows = self.db.query("""
+                    SELECT e.code || ' ' || e.name, COALESCE(SUM(pr.qty),0)
+                    FROM equipments e
+                    LEFT JOIN production_records pr ON pr.equipment_id=e.id
+                    GROUP BY e.id ORDER BY SUM(pr.qty) DESC NULLS LAST LIMIT 10
+                """)
+                rows = [r for r in rows if (r[1] or 0) > 0]
+                if not rows:
+                    ax.text(0.5, 0.5, '데이터 없음', ha='center', va='center',
+                            fontsize=18, color='#999', transform=ax.transAxes)
+                else:
+                    labels = [r[0] for r in rows][::-1]
+                    vals   = [r[1] for r in rows][::-1]
+                    bars = ax.barh(labels, vals, color='#00695C')
+                    ax.set_xlabel('생산량')
+                    ax.set_title('설비별 누적 생산량 TOP 10', fontsize=14, fontweight='bold')
+                    ax.grid(axis='x', linestyle='--', alpha=0.5)
+                    for b, v in zip(bars, vals):
+                        ax.text(v, b.get_y() + b.get_height()/2,
+                                f' {v}', va='center', fontsize=9)
+
+            elif kind == '일별 불량률 추이':
+                rows = self.db.query("""
+                    SELECT work_date,
+                           COALESCE(SUM(qty),0), COALESCE(SUM(defect_qty),0)
+                    FROM production_records
+                    WHERE work_date >= date('now','-30 day')
+                    GROUP BY work_date ORDER BY work_date
+                """)
+                if not rows:
+                    ax.text(0.5, 0.5, '데이터 없음', ha='center', va='center',
+                            fontsize=18, color='#999', transform=ax.transAxes)
+                else:
+                    dates = [r[0] for r in rows]
+                    rates = [(r[2]*100/(r[1]+r[2])) if (r[1]+r[2]) else 0 for r in rows]
+                    ax.plot(dates, rates, marker='o', linewidth=2.2,
+                            color='#EF5350', markerfacecolor='#C62828')
+                    ax.set_ylabel('불량률 (%)')
+                    ax.set_title('최근 30일 일별 불량률', fontsize=14, fontweight='bold')
+                    ax.tick_params(axis='x', rotation=45, labelsize=8)
+                    ax.grid(linestyle='--', alpha=0.5)
+                    ax.axhline(y=3, color='#FFA726', linestyle='--', label='관리 한계 3%')
+                    ax.legend()
+
+            elif kind == '수주 상태 현황':
+                rows = self.db.query("""
+                    SELECT status, COUNT(*) FROM orders GROUP BY status
+                """)
+                if not rows:
+                    ax.text(0.5, 0.5, '데이터 없음', ha='center', va='center',
+                            fontsize=18, color='#999', transform=ax.transAxes)
+                else:
+                    labels = [r[0] for r in rows]
+                    vals   = [r[1] for r in rows]
+                    color_map = {'접수': '#42A5F5', '계획완료': '#66BB6A',
+                                 '진행중': '#FFA726', '출하완료': '#26A69A',
+                                 '취소': '#EF5350'}
+                    colors = [color_map.get(l, '#90A4AE') for l in labels]
+                    bars = ax.bar(labels, vals, color=colors)
+                    ax.set_ylabel('건수')
+                    ax.set_title('수주 상태별 건수', fontsize=14, fontweight='bold')
+                    ax.grid(axis='y', linestyle='--', alpha=0.5)
+                    for b, v in zip(bars, vals):
+                        ax.text(b.get_x() + b.get_width()/2, v,
+                                f'{v}', ha='center', va='bottom', fontsize=11, fontweight='bold')
+
+            elif kind == '고객사별 수주 금액(수량)':
+                rows = self.db.query("""
+                    SELECT c.name, COALESCE(SUM(o.quantity),0)
+                    FROM orders o LEFT JOIN customers c ON o.customer_id=c.id
+                    GROUP BY c.id ORDER BY SUM(o.quantity) DESC LIMIT 10
+                """)
+                rows = [r for r in rows if r[0] and r[1]]
+                if not rows:
+                    ax.text(0.5, 0.5, '데이터 없음', ha='center', va='center',
+                            fontsize=18, color='#999', transform=ax.transAxes)
+                else:
+                    labels = [r[0] for r in rows]
+                    vals   = [r[1] for r in rows]
+                    bars = ax.bar(labels, vals, color='#5C6BC0')
+                    ax.set_ylabel('총 수주량')
+                    ax.set_title('고객사별 누적 수주량 TOP 10', fontsize=14, fontweight='bold')
+                    ax.tick_params(axis='x', rotation=30, labelsize=9)
+                    ax.grid(axis='y', linestyle='--', alpha=0.5)
+                    for b, v in zip(bars, vals):
+                        ax.text(b.get_x() + b.get_width()/2, v,
+                                f'{v}', ha='center', va='bottom', fontsize=9)
+
+            fig.tight_layout()
+            canvas.draw()
+
+        cb.bind('<<ComboboxSelected>>', lambda e: _draw())
+        tk.Button(top, text="🔄 새로고침", font=('Malgun Gothic', 10, 'bold'),
+                  bg=C['accent'], fg='white', relief='flat',
+                  cursor='hand2', padx=12, command=_draw).pack(side='left', padx=10)
+        tk.Button(top, text="💾 PNG 저장", font=('Malgun Gothic', 10),
+                  bg='#455A64', fg='white', relief='flat',
+                  cursor='hand2', padx=12,
+                  command=lambda: _save_png()).pack(side='left', padx=4)
+
+        def _save_png():
+            from tkinter import filedialog
+            path = filedialog.asksaveasfilename(
+                defaultextension='.png',
+                filetypes=[('PNG 이미지', '*.png')],
+                initialfile=f"graph_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
+            if path:
+                fig.savefig(path, dpi=150, bbox_inches='tight')
+                messagebox.showinfo("저장 완료", f"저장됨:\n{path}")
+
+        _draw()
+
+    # ========================================================
+    # 품목 관리 (메뉴에서 제거됨, 호환용으로 보존)
     # ========================================================
     def _pg_items(self):
         p = self.page_area
