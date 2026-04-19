@@ -461,9 +461,9 @@ class ProductionApp:
                                      fg=C['accent'], bg=C['primary_dark'])
         self._splash_dots.pack(pady=(28, 6))
 
-        tk.Label(bg, text="시스템 시작 중...",
-                 font=('Malgun Gothic', 10),
-                 fg='#B0BEC5', bg=C['primary_dark']).pack()
+        tk.Label(bg, text="Enter 키를 누르거나 화면을 클릭하세요",
+                 font=('Malgun Gothic', 11, 'bold'),
+                 fg=C['accent'], bg=C['primary_dark']).pack()
 
         # 하단 시간 / 버전
         bot = tk.Frame(bg, bg=C['primary_dark']); bot.pack(side='bottom', fill='x', pady=14)
@@ -483,13 +483,16 @@ class ProductionApp:
             self.root.after(280, _animate)
         _animate()
 
-        # 클릭하면 즉시 진입
-        for w in [bg]:
-            w.bind('<Button-1>', lambda e: self._show_main())
-        self.root.bind('<Key>', lambda e: self._show_main())
-
-        # 2.4초 후 자동 진입
-        self.root.after(2400, self._show_main)
+        # Enter 키 또는 클릭으로 진입 (자동 진입 없음)
+        def _enter(e=None):
+            self.root.unbind('<Return>')
+            self.root.unbind('<KP_Enter>')
+            self.root.unbind('<Button-1>')
+            self._show_main()
+        self.root.bind('<Return>', _enter)
+        self.root.bind('<KP_Enter>', _enter)
+        self.root.bind('<Button-1>', _enter)
+        self.root.focus_force()
 
     # ========================================================
     # 로그인
@@ -620,7 +623,7 @@ class ProductionApp:
             bar.pack(side='left', fill='y')
 
             btn = tk.Button(row, text=f"  {emoji}   {label}",
-                            font=('Malgun Gothic', 16, 'bold'),
+                            font=('Malgun Gothic', 15, 'bold'),
                             fg='#000000', bg=C['sidebar_bg'],
                             relief='flat', anchor='w', cursor='hand2', pady=14,
                             activebackground=color, activeforeground='black',
