@@ -689,8 +689,50 @@ class ProductionApp:
         self._build_header()
         content = tk.Frame(self.root, bg=C['bg']); content.pack(fill='both', expand=True)
         self._build_sidebar(content)
-        self.page_area = tk.Frame(content, bg=C['bg'])
-        self.page_area.pack(side='left', fill='both', expand=True)
+
+        # ── 스크롤 가능한 페이지 영역 (수직/수평 스크롤바) ──
+        scroll_wrap = tk.Frame(content, bg=C['bg'])
+        scroll_wrap.pack(side='left', fill='both', expand=True)
+
+        vbar = ttk.Scrollbar(scroll_wrap, orient='vertical')
+        hbar = ttk.Scrollbar(scroll_wrap, orient='horizontal')
+        canvas = tk.Canvas(scroll_wrap, bg=C['bg'], highlightthickness=0,
+                           yscrollcommand=vbar.set, xscrollcommand=hbar.set)
+        vbar.config(command=canvas.yview); hbar.config(command=canvas.xview)
+        vbar.pack(side='right', fill='y')
+        hbar.pack(side='bottom', fill='x')
+        canvas.pack(side='left', fill='both', expand=True)
+
+        self.page_area = tk.Frame(canvas, bg=C['bg'])
+        self._page_window = canvas.create_window((0, 0), window=self.page_area, anchor='nw')
+        self._page_canvas = canvas
+
+        def _on_inner_configure(e):
+            canvas.configure(scrollregion=canvas.bbox('all'))
+        def _on_canvas_configure(e):
+            # 내부 프레임의 폭을 캔버스 폭과 내부 콘텐츠 중 더 큰 값으로 (가로 스크롤 발생 시 콘텐츠 우선)
+            inner_w = self.page_area.winfo_reqwidth()
+            canvas.itemconfig(self._page_window, width=max(e.width, inner_w))
+        self.page_area.bind('<Configure>', _on_inner_configure)
+        canvas.bind('<Configure>', _on_canvas_configure)
+
+        # 마우스 휠 (Win/Linux: <MouseWheel>, mac도 <MouseWheel>이지만 delta가 작음)
+        def _on_wheel(e):
+            delta = -1 if (e.delta > 0) else 1
+            if sys.platform == 'darwin':
+                delta = -int(e.delta)
+            else:
+                delta = -int(e.delta / 120)
+            canvas.yview_scroll(delta, 'units')
+        def _on_wheel_shift(e):
+            delta = -int(e.delta / 120) if sys.platform != 'darwin' else -int(e.delta)
+            canvas.xview_scroll(delta, 'units')
+        canvas.bind_all('<MouseWheel>', _on_wheel)
+        canvas.bind_all('<Shift-MouseWheel>', _on_wheel_shift)
+        # Linux scroll buttons
+        canvas.bind_all('<Button-4>', lambda e: canvas.yview_scroll(-1, 'units'))
+        canvas.bind_all('<Button-5>', lambda e: canvas.yview_scroll(1, 'units'))
+
         self._nav('dashboard')
 
     def _build_header(self):
@@ -728,7 +770,6 @@ class ProductionApp:
             menus += [
                 ('customers',  '고객사 관리',  '#26C6DA', '🏢'),
                 ('equipments', '설비 관리',    '#8D6E63', '🏭'),
-                ('users',      '사용자 관리',  '#EC407A', '👤'),
             ]
 
         tk.Label(sb, text="M  E  N  U", font=('Malgun Gothic', 12, 'bold'),
@@ -750,7 +791,7 @@ class ProductionApp:
             bar.pack(side='left', fill='y')
 
             btn = tk.Button(row, text=f"  {emoji}   {label}",
-                            font=('Malgun Gothic', 15, 'bold'),
+                            font=('Malgun Gothic', 14, 'bold'),
                             fg='#000000', bg=C['sidebar_bg'],
                             relief='flat', anchor='w', cursor='hand2', pady=14,
                             activebackground=color, activeforeground='black',
@@ -782,6 +823,10 @@ class ProductionApp:
                 b.config(bg=C['sidebar_bg'], fg='#000000')
                 bar.config(bg=C['sidebar_bg'])
         for w in self.page_area.winfo_children(): w.destroy()
+        # 페이지 전환 시 스크롤 위치 초기화
+        if hasattr(self, '_page_canvas'):
+            self._page_canvas.yview_moveto(0)
+            self._page_canvas.xview_moveto(0)
         pages = {
             'dashboard':  self._pg_dashboard,
             'orders':     self._pg_orders,
