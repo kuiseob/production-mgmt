@@ -234,32 +234,55 @@ class DB:
         for row in items:
             c.execute("INSERT OR IGNORE INTO items(part_no,name,spec,material,unit_weight,customer_id) VALUES(?,?,?,?,?,?)", row)
 
-        # 설비 (실제 보유 설비)
+        # 설비 (실제 보유 설비) - (설비명, 생산품목)
         general_cnc = [
-            'LYNX200G-S10', 'E-160A-1', 'E-160A-2', 'LYNX220MA20',
-            'LYNX220A-NT10-1', 'LYNX220MA30-1', 'LYNX220MA30-2',
-            'LYNX2100M-1', 'LYNX2100M-2', 'LYNX2100M-3',
-            'LYNX220A20', 'LYNX220A-NT10-2', 'PUMATW2100M-GL',
+            ('LYNX200G-S10',     'SDC80 C/BOTTOM'),
+            ('E-160A-1',         'ADJUSTER류'),
+            ('E-160A-2',         'ADJUSTER류'),
+            ('LYNX220MA20',      'SDC80 C/BOTTOM'),
+            ('LYNX220A-NT10-1',  'SDC80 C/BOTTOM'),
+            ('LYNX220MA30-1',    'SDC50 CASE'),
+            ('LYNX220MA30-2',    'SDC50 CASE'),
+            ('LYNX2100M-1',      'SDC80 CASE'),
+            ('LYNX2100M-2',      'SDC80 CASE'),
+            ('LYNX2100M-3',      'SDC80 CASE'),
+            ('LYNX220A20',       'VC CORE'),
+            ('LYNX220A-NT10-2',  'VC CORE'),
+            ('PUMATW2100M-GL',   'SDC80 C/BOTTOM'),
         ]
         compound_cnc = [
-            'SR32J-1', 'XD-26II', 'XD-20II-1', 'XD-20II-2', 'XD-20II-3',
-            'XD-38II-H-1', 'XD-38II-H-2', 'SR32J-2', 'SR32JN',
-            'SB20R-1', 'SB20R-2', 'SB20R-3', 'SB20R-4', 'SB20R-5', 'SR38',
+            ('SR32J-1',     'SEPERATOR'),
+            ('XD-26II',     'ROD B'),
+            ('XD-20II-1',   'ROD B'),
+            ('XD-20II-2',   'ROD A'),
+            ('XD-20II-3',   'ROD A'),
+            ('XD-38II-H-1', 'CORE'),
+            ('XD-38II-H-2', 'CORE'),
+            ('SR32J-2',     'SEPERATOR'),
+            ('SR32JN',      'SEPERATOR'),
+            ('SB20R-1',     'PLUNGER'),
+            ('SB20R-2',     'PLUNGER'),
+            ('SB20R-3',     'PLUNGER'),
+            ('SB20R-4',     'PLUNGER'),
+            ('SB20R-5',     'PLUNGER'),
+            ('SR38',        'CORE'),
         ]
 
         # 기존 샘플 데이터가 있으면 정리 후 재등록
         old = c.execute("SELECT COUNT(*) FROM equipments WHERE name LIKE 'DOOSAN%' OR name LIKE 'MAZAK%' OR name LIKE 'HYUNDAI%' OR name LIKE 'DMG%'").fetchone()[0]
-        if old > 0:
+        # 생산품목이 미입력된 기존 데이터(spec='')도 새로 채우기 위해 재시드
+        empty_spec = c.execute("SELECT COUNT(*) FROM equipments WHERE COALESCE(spec,'')=''").fetchone()[0]
+        if old > 0 or empty_spec > 0:
             c.execute("DELETE FROM equipments")
 
-        for i, name in enumerate(general_cnc, 1):
+        for i, (name, item) in enumerate(general_cnc, 1):
             code = f"CNC-{i:02d}"
             c.execute("INSERT OR IGNORE INTO equipments(code,name,process,spec) VALUES(?,?,?,?)",
-                      (code, name, '일반CNC', ''))
-        for i, name in enumerate(compound_cnc, 1):
+                      (code, name, '일반CNC', item))
+        for i, (name, item) in enumerate(compound_cnc, 1):
             code = f"MCT-{i:02d}"
             c.execute("INSERT OR IGNORE INTO equipments(code,name,process,spec) VALUES(?,?,?,?)",
-                      (code, name, '복합CNC', ''))
+                      (code, name, '복합CNC', item))
 
         self.conn.commit()
 
@@ -1598,7 +1621,7 @@ class ProductionApp:
             f"{'설 비 별  가 동  현 황':^{W}}",
             f"{'출력일시: ' + now:>{W}}",
             "=" * W,
-            f"{'코드':<10} {'설비명':<24} {'공정':<10} {'규격':<28} {'상태':<8} {'배정':>5} {'완료':>5} {'생산량':>8} {'불량':>5}",
+            f"{'코드':<10} {'설비명':<24} {'공정':<10} {'생산품목':<28} {'상태':<8} {'배정':>5} {'완료':>5} {'생산량':>8} {'불량':>5}",
             "-" * W,
         ]
         for r in rows:
@@ -2219,11 +2242,11 @@ class ProductionApp:
         _lbl(0,0,"코드 *");   make_entry(f, vs['code'], 12).grid(row=0,column=1,padx=4)
         _lbl(0,2,"설비명 *"); make_entry(f, vs['name'], 24).grid(row=0,column=3,padx=4)
         _lbl(0,4,"공정 *");   make_combo(f, vs['process'], PROCESSES, width=12).grid(row=0,column=5,padx=4)
-        _lbl(1,0,"규격");     make_entry(f, vs['spec'], 30).grid(row=1,column=1,columnspan=3,padx=4,pady=4,sticky='w')
+        _lbl(1,0,"생산품목");  make_entry(f, vs['spec'], 30).grid(row=1,column=1,columnspan=3,padx=4,pady=4,sticky='w')
         _lbl(1,4,"상태");     make_combo(f, vs['status'], ['가동','정비','정지'], width=10).grid(row=1,column=5,padx=4)
 
         wrap = tk.Frame(p, bg=C['bg']); wrap.pack(fill='both', expand=True, padx=20, pady=6)
-        cols = ('코드','설비명','공정','규격','상태')
+        cols = ('코드','설비명','공정','생산품목','상태')
         tree = make_tree(wrap, cols, [100, 220, 100, 280, 80], height=16)
 
         def _load():
