@@ -898,12 +898,12 @@ class ProductionApp:
         # 납기 임박 수주
         make_label(p, " ⚠ 납기 임박 (7일 이내)", bold=True, size=11, color=C['urgent'], bg=C['bg']).pack(anchor='w', padx=22, pady=(10, 2))
         wrap1 = tk.Frame(p, bg=C['bg']); wrap1.pack(fill='x', padx=20, pady=4)
-        cols1 = ('주문번호', '고객사', '품번', '품명', '수량', '납기일', '상태', '진행률')
+        cols1 = ('주문번호', '고객사', '생산품명', '수량', '납기일', '상태', '진행률')
         ws1   = (135, 150, 100, 140, 60, 100, 80, 70)
         tree1 = make_tree(wrap1, cols1, ws1, height=5)
 
         rows1 = self.db.query(f"""
-            SELECT o.order_no, c.name, i.part_no, i.name, o.quantity, o.due_date, o.status,
+            SELECT o.order_no, c.name, i.name, o.quantity, o.due_date, o.status,
                    COALESCE((SELECT SUM(done_qty) FROM work_orders WHERE order_id=o.id),0) || '/' || o.quantity
             FROM orders o
             LEFT JOIN customers c ON o.customer_id=c.id
@@ -916,12 +916,12 @@ class ProductionApp:
         # 진행중 작업
         make_label(p, " 진행중 작업 현황", bold=True, size=11, bg=C['bg']).pack(anchor='w', padx=22, pady=(10, 2))
         wrap2 = tk.Frame(p, bg=C['bg']); wrap2.pack(fill='both', expand=True, padx=20, pady=4)
-        cols2 = ('작업번호', '주문번호', '품번', '공정', '설비', '계획수량', '실적수량', '불량', '상태')
+        cols2 = ('작업번호', '주문번호', '생산품명', '공정', '설비', '계획수량', '실적수량', '불량', '상태')
         ws2   = (130, 130, 100, 80, 90, 80, 80, 60, 80)
         tree2 = make_tree(wrap2, cols2, ws2, height=10)
 
         rows2 = self.db.query("""
-            SELECT wo.wo_no, o.order_no, i.part_no, wo.process, e.code,
+            SELECT wo.wo_no, o.order_no, i.name, wo.process, e.code,
                    wo.plan_qty, wo.done_qty, wo.defect_qty, wo.status
             FROM work_orders wo
             LEFT JOIN orders o ON wo.order_id=o.id
@@ -945,7 +945,7 @@ class ProductionApp:
         customers = self.db.query("SELECT id, name FROM customers WHERE active=1")
         items     = self.db.query("SELECT id, part_no, name FROM items WHERE active=1")
         cus_names = [r[1] for r in customers]
-        item_disp = [f"{r[1]} - {r[2]}" for r in items]
+        item_disp = [r[2] for r in items]
 
         # ── 등록 폼 ──
         f = tk.Frame(p, bg='white', padx=22, pady=16); f.pack(fill='x', padx=20, pady=12)
@@ -965,7 +965,7 @@ class ProductionApp:
         cus_var = tk.StringVar()
         make_combo(f, cus_var, cus_names, width=22).grid(row=1, column=4, padx=4, columnspan=2, sticky='w')
 
-        _lbl(2, 0, "품번/품명 *")
+        _lbl(2, 0, "생산품명 *")
         item_var = tk.StringVar()
         make_combo(f, item_var, item_disp, width=30).grid(row=2, column=1, padx=4, columnspan=3, sticky='w', pady=4)
 
@@ -1007,13 +1007,13 @@ class ProductionApp:
         # ── 목록 ──
         make_label(p, " 수주 목록", bold=True, size=11, bg=C['bg']).pack(anchor='w', padx=22, pady=(4, 2))
         wrap = tk.Frame(p, bg=C['bg']); wrap.pack(fill='both', expand=True, padx=20, pady=4)
-        cols = ('주문번호', '고객사', '품번', '품명', '재질', '수량', '수주일', '납기일', '상태')
+        cols = ('주문번호', '고객사', '생산품명', '재질', '수량', '수주일', '납기일', '상태')
         ws   = (135, 150, 100, 140, 80, 60, 100, 100, 80)
         tree = make_tree(wrap, cols, ws, height=14)
 
         def _load():
             rows = self.db.query("""
-                SELECT o.order_no, c.name, i.part_no, i.name, i.material, o.quantity,
+                SELECT o.order_no, c.name, i.name, i.material, o.quantity,
                        o.order_date, o.due_date, o.status
                 FROM orders o
                 LEFT JOIN customers c ON o.customer_id=c.id
@@ -1023,7 +1023,7 @@ class ProductionApp:
             today = datetime.now().strftime("%Y-%m-%d")
             d7 = (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d")
             def tag(i, r):
-                st = r[8]; due = r[7]
+                st = r[7]; due = r[6]
                 if st == '출하완료': return 'pass_tag'
                 if today <= due <= d7: return 'urgent_tag'
                 return 'even' if i%2 else ''
@@ -1043,14 +1043,14 @@ class ProductionApp:
                    size=10, color=C['secondary'], bg='white').pack(anchor='w')
 
         wrap = tk.Frame(p, bg=C['bg']); wrap.pack(fill='both', expand=True, padx=20, pady=4)
-        cols = ('OID', '주문번호', '고객사', '품번', '품명', '수량', '납기일', '상태', 'WO수')
+        cols = ('OID', '주문번호', '고객사', '생산품명', '수량', '납기일', '상태', 'WO수')
         ws   = (0, 135, 150, 100, 150, 60, 100, 80, 60)
         tree = make_tree(wrap, cols, ws, height=14)
         tree.column('OID', width=0, stretch=False)
 
         def _load():
             rows = self.db.query("""
-                SELECT o.id, o.order_no, c.name, i.part_no, i.name, o.quantity, o.due_date, o.status,
+                SELECT o.id, o.order_no, c.name, i.name, o.quantity, o.due_date, o.status,
                        (SELECT COUNT(*) FROM work_orders WHERE order_id=o.id)
                 FROM orders o
                 LEFT JOIN customers c ON o.customer_id=c.id
@@ -1059,7 +1059,7 @@ class ProductionApp:
                 ORDER BY o.due_date
             """)
             def tag(i, r):
-                if r[8] > 0: return 'pass_tag'
+                if r[7] > 0: return 'pass_tag'
                 return 'even' if i%2 else ''
             fill_tree(tree, rows, tag)
 
@@ -1074,7 +1074,7 @@ class ProductionApp:
             if not sel:
                 messagebox.showerror("오류", "수주를 선택하세요."); return
             v = tree.item(sel[0])['values']
-            order_id, order_no, qty = v[0], v[1], v[5]
+            order_id, order_no, qty = v[0], v[1], v[4]
             existing = self.db.query("SELECT COUNT(*) FROM work_orders WHERE order_id=?", (order_id,))[0][0]
             if existing > 0:
                 if not messagebox.askyesno("확인", f"이미 {existing}건의 작업지시가 있습니다. 추가로 생성할까요?"):
@@ -1103,14 +1103,14 @@ class ProductionApp:
         workers    = self.db.query("SELECT id, name FROM users WHERE role IN ('production','admin')")
 
         wrap = tk.Frame(p, bg=C['bg']); wrap.pack(fill='both', expand=True, padx=20, pady=10)
-        cols = ('WID', '작업번호', '주문번호', '품번', '품명', '공정', '계획수량', '실적', '불량', '설비', '담당', '상태')
+        cols = ('WID', '작업번호', '주문번호', '생산품명', '공정', '계획수량', '실적', '불량', '설비', '담당', '상태')
         ws   = (0, 135, 130, 100, 130, 75, 70, 60, 50, 90, 80, 75)
         tree = make_tree(wrap, cols, ws, height=15)
         tree.column('WID', width=0, stretch=False)
 
         def _load():
             rows = self.db.query("""
-                SELECT wo.id, wo.wo_no, o.order_no, i.part_no, i.name, wo.process,
+                SELECT wo.id, wo.wo_no, o.order_no, i.name, wo.process,
                        wo.plan_qty, wo.done_qty, wo.defect_qty,
                        COALESCE(e.code,'-'), COALESCE(u.name,'-'), wo.status
                 FROM work_orders wo
@@ -1121,8 +1121,8 @@ class ProductionApp:
                 ORDER BY wo.created_at DESC
             """)
             def tag(i, r):
-                if r[11] == '완료': return 'pass_tag'
-                if r[11] == '진행중': return 'urgent_tag'
+                if r[10] == '완료': return 'pass_tag'
+                if r[10] == '진행중': return 'urgent_tag'
                 return 'even' if i%2 else ''
             fill_tree(tree, rows, tag)
 
@@ -1137,10 +1137,10 @@ class ProductionApp:
             s = tree.selection()
             if not s: return
             v = tree.item(s[0])['values']
-            sel_id[0] = v[0]; sel_proc[0] = v[5]
-            sel_var.set(f"  {v[1]}  ({v[3]} {v[4]} / {v[5]} / 계획 {v[6]})")
+            sel_id[0] = v[0]; sel_proc[0] = v[4]
+            sel_var.set(f"  {v[1]}  ({v[3]} / {v[4]} / 계획 {v[5]})")
             # 설비 콤보 갱신 (공정 일치만)
-            eq_codes = [f"{r[1]} - {r[2]}" for r in equipments if r[3] == v[5]]
+            eq_codes = [f"{r[1]} - {r[2]}" for r in equipments if r[3] == v[4]]
             equip_combo['values'] = eq_codes
 
         tree.bind('<<TreeviewSelect>>', _on_sel)
@@ -1209,14 +1209,14 @@ class ProductionApp:
         page_header(p, "생산실적", "  공정별 생산 수량 입력")
 
         wrap = tk.Frame(p, bg=C['bg']); wrap.pack(fill='both', expand=True, padx=20, pady=10)
-        cols = ('WID', '작업번호', '품번', '품명', '공정', '설비', '계획', '실적', '불량', '진행률', '상태')
+        cols = ('WID', '작업번호', '생산품명', '공정', '설비', '계획', '실적', '불량', '진행률', '상태')
         ws   = (0, 130, 100, 140, 75, 90, 60, 60, 50, 70, 75)
         tree = make_tree(wrap, cols, ws, height=12)
         tree.column('WID', width=0, stretch=False)
 
         def _load():
             rows = self.db.query("""
-                SELECT wo.id, wo.wo_no, i.part_no, i.name, wo.process,
+                SELECT wo.id, wo.wo_no, i.name, wo.process,
                        COALESCE(e.code,'-'),
                        wo.plan_qty, wo.done_qty, wo.defect_qty,
                        CAST(wo.done_qty * 100.0 / wo.plan_qty AS INTEGER) || '%',
@@ -1229,8 +1229,8 @@ class ProductionApp:
                 ORDER BY wo.actual_start DESC
             """)
             def tag(i, r):
-                if r[10] == '완료': return 'pass_tag'
-                return 'urgent_tag' if r[10] == '진행중' else ('even' if i%2 else '')
+                if r[9] == '완료': return 'pass_tag'
+                return 'urgent_tag' if r[9] == '진행중' else ('even' if i%2 else '')
             fill_tree(tree, rows, tag)
 
         _load()
@@ -1245,7 +1245,7 @@ class ProductionApp:
             if not s: return
             v = tree.item(s[0])['values']
             sel_id[0] = v[0]
-            sel_var.set(f"  {v[1]}  ({v[2]} {v[3]} / {v[4]} / 계획 {v[6]})")
+            sel_var.set(f"  {v[1]}  ({v[2]} / {v[3]} / {v[4]} / 계획 {v[5]})")
 
         tree.bind('<<TreeviewSelect>>', _on_sel)
 
@@ -1292,14 +1292,14 @@ class ProductionApp:
         page_header(p, "품질검사", "  자주검사 / 최종검사")
 
         wrap = tk.Frame(p, bg=C['bg']); wrap.pack(fill='both', expand=True, padx=20, pady=10)
-        cols = ('OID', '주문번호', '고객사', '품번', '품명', '수량', '진행률', '검사상태')
+        cols = ('OID', '주문번호', '고객사', '생산품명', '수량', '진행률', '검사상태')
         ws   = (0, 135, 150, 100, 150, 70, 80, 90)
         tree = make_tree(wrap, cols, ws, height=14)
         tree.column('OID', width=0, stretch=False)
 
         def _load():
             rows = self.db.query("""
-                SELECT o.id, o.order_no, c.name, i.part_no, i.name, o.quantity,
+                SELECT o.id, o.order_no, c.name, i.name, o.quantity,
                        COALESCE((SELECT SUM(done_qty) FROM work_orders WHERE order_id=o.id),0)||'/'||o.quantity,
                        CASE WHEN EXISTS(SELECT 1 FROM inspections WHERE order_id=o.id AND result='합격')
                             THEN '합격'
@@ -1313,8 +1313,8 @@ class ProductionApp:
                 ORDER BY o.due_date
             """)
             def tag(i, r):
-                if r[7] == '합격': return 'pass_tag'
-                if r[7] == '불합격': return 'fail_tag'
+                if r[6] == '합격': return 'pass_tag'
+                if r[6] == '불합격': return 'fail_tag'
                 return 'even' if i%2 else ''
             fill_tree(tree, rows, tag)
 
@@ -1329,7 +1329,7 @@ class ProductionApp:
             if not s: return
             v = tree.item(s[0])['values']
             sel_id[0] = v[0]
-            sel_var.set(f"  {v[1]}  ({v[3]} {v[4]} / 수량 {v[5]})")
+            sel_var.set(f"  {v[1]}  ({v[3]} / 수량 {v[4]})")
 
         tree.bind('<<TreeviewSelect>>', _on_sel)
 
@@ -1382,14 +1382,14 @@ class ProductionApp:
         page_header(p, "출하 관리", "  완성품 납품 등록")
 
         wrap = tk.Frame(p, bg=C['bg']); wrap.pack(fill='both', expand=True, padx=20, pady=10)
-        cols = ('OID', '주문번호', '고객사', '품번', '품명', '수량', '납기일', '검사결과')
+        cols = ('OID', '주문번호', '고객사', '생산품명', '수량', '납기일', '검사결과')
         ws   = (0, 135, 150, 100, 150, 70, 100, 90)
         tree = make_tree(wrap, cols, ws, height=14)
         tree.column('OID', width=0, stretch=False)
 
         def _load():
             rows = self.db.query("""
-                SELECT o.id, o.order_no, c.name, i.part_no, i.name, o.quantity, o.due_date,
+                SELECT o.id, o.order_no, c.name, i.name, o.quantity, o.due_date,
                        COALESCE((SELECT result FROM inspections WHERE order_id=o.id ORDER BY id DESC LIMIT 1),'-')
                 FROM orders o
                 LEFT JOIN customers c ON o.customer_id=c.id
@@ -1410,8 +1410,8 @@ class ProductionApp:
             s = tree.selection()
             if not s: return
             v = tree.item(s[0])['values']
-            sel[0] = v[0]; sel[1] = v[5]
-            sel_var.set(f"  {v[1]}  ({v[2]} / {v[3]} {v[4]} / {v[5]}개)")
+            sel[0] = v[0]; sel[1] = v[4]
+            sel_var.set(f"  {v[1]}  ({v[2]} / {v[3]} / {v[4]}개)")
 
         tree.bind('<<TreeviewSelect>>', _on_sel)
 
@@ -1448,11 +1448,11 @@ class ProductionApp:
         # 출하 이력
         make_label(p, " 출하 이력", bold=True, size=10, bg=C['bg']).pack(anchor='w', padx=22, pady=(6, 0))
         wrap2 = tk.Frame(p, bg=C['bg']); wrap2.pack(fill='x', padx=20, pady=4)
-        cols2 = ('출하번호', '주문번호', '고객사', '품번', '출하수량', '출하일', '담당')
+        cols2 = ('출하번호', '주문번호', '고객사', '생산품명', '출하수량', '출하일', '담당')
         ws2   = (130, 135, 150, 100, 80, 100, 90)
         tree2 = make_tree(wrap2, cols2, ws2, height=5)
         rows2 = self.db.query("""
-            SELECT sh.ship_no, o.order_no, c.name, i.part_no, sh.quantity, sh.ship_date, u.name
+            SELECT sh.ship_no, o.order_no, c.name, i.name, sh.quantity, sh.ship_date, u.name
             FROM shipments sh
             LEFT JOIN orders o ON sh.order_id=o.id
             LEFT JOIN customers c ON o.customer_id=c.id
@@ -1503,7 +1503,7 @@ class ProductionApp:
 
     def _rpt_workorder(self):
         rows = self.db.query("""
-            SELECT wo.wo_no, o.order_no, c.name, i.part_no, i.name, i.material,
+            SELECT wo.wo_no, o.order_no, c.name, i.name, i.material,
                    wo.process, COALESCE(e.code,'-'), COALESCE(u.name,'-'),
                    wo.plan_qty, wo.done_qty, wo.status, o.due_date
             FROM work_orders wo
@@ -1525,11 +1525,11 @@ class ProductionApp:
         ]
         for r in rows:
             parts += [
-                f"  작업번호: {r[0]:<20}  주문번호: {r[1]:<20}  납기일: {r[12]}",
+                f"  작업번호: {r[0]:<20}  주문번호: {r[1]:<20}  납기일: {r[11]}",
                 f"  고  객: {r[2]:<20}",
-                f"  품  번: {r[3]:<14}  품명: {r[4]:<24}  재질: {r[5]}",
-                f"  공  정: {r[6]:<10}  설비: {r[7]:<14}  담당: {r[8]}",
-                f"  계획수량: {r[9]:>6}    실적: {r[10]:>6}    상태: {r[11]}",
+                f"  생산품명: {r[3]:<28}  재질: {r[4]}",
+                f"  공  정: {r[5]:<10}  설비: {r[6]:<14}  담당: {r[7]}",
+                f"  계획수량: {r[8]:>6}    실적: {r[9]:>6}    상태: {r[10]}",
                 "-" * W,
             ]
         content = '\n'.join(parts) if rows else "작업지시 없음"
@@ -1539,7 +1539,7 @@ class ProductionApp:
     def _rpt_daily(self):
         today = datetime.now().strftime("%Y-%m-%d")
         rows = self.db.query("""
-            SELECT pr.work_date, wo.wo_no, i.part_no, i.name, wo.process,
+            SELECT pr.work_date, wo.wo_no, i.name, wo.process,
                    COALESCE(e.code,'-'), pr.qty, pr.defect_qty, COALESCE(u.name,'-')
             FROM production_records pr
             LEFT JOIN work_orders wo ON pr.wo_id=wo.id
@@ -1558,13 +1558,13 @@ class ProductionApp:
             f"{'생 산 일 보':^{W}}",
             f"{'출력일시: ' + now:>{W}}",
             "=" * W,
-            f"{'작업일':<12} {'작업번호':<16} {'품번':<10} {'품명':<14} {'공정':<8} {'설비':<10} {'양품':>6} {'불량':>5} {'담당':<8}",
+            f"{'작업일':<12} {'작업번호':<16} {'생산품명':<22} {'공정':<8} {'설비':<10} {'양품':>6} {'불량':>5} {'담당':<8}",
             "-" * W,
         ]
         total_q = total_d = 0
         for r in rows:
-            lines.append(f"{r[0]:<12} {r[1]:<16} {r[2]:<10} {r[3]:<14} {r[4]:<8} {r[5]:<10} {r[6]:>6} {r[7]:>5} {r[8]:<8}")
-            total_q += r[6]; total_d += r[7]
+            lines.append(f"{r[0]:<12} {r[1]:<16} {r[2]:<22} {r[3]:<8} {r[4]:<10} {r[5]:>6} {r[6]:>5} {r[7]:<8}")
+            total_q += r[5]; total_d += r[6]
         lines += ["-" * W, f"  합계  양품 {total_q}    불량 {total_d}    불량률 {(total_d*100/(total_q+total_d)) if (total_q+total_d) else 0:.2f}%", "=" * W]
         content = '\n'.join(lines)
         self._set_preview(content)
@@ -1572,7 +1572,7 @@ class ProductionApp:
 
     def _rpt_invoice(self):
         rows = self.db.query("""
-            SELECT sh.ship_no, sh.ship_date, c.name, i.part_no, i.name, sh.quantity, o.order_no
+            SELECT sh.ship_no, sh.ship_date, c.name, i.name, sh.quantity, o.order_no
             FROM shipments sh
             LEFT JOIN orders o ON sh.order_id=o.id
             LEFT JOIN customers c ON o.customer_id=c.id
@@ -1592,9 +1592,8 @@ class ProductionApp:
                 f"| 거 래 처: {r[2]:<{W-12}}|",
                 f"| 주문번호: {r[6]:<{W-12}}|",
                 f"+{'-' * W}+",
-                f"| 품  번: {r[3]:<{W-10}}|",
-                f"| 품  명: {r[4]:<{W-10}}|",
-                f"| 수  량: {r[5]:<{W-10}}|",
+                f"| 생산품명: {r[3]:<{W-12}}|",
+                f"| 수  량: {r[4]:<{W-10}}|",
                 f"+{'-' * W}+",
                 f"| 인수자 확인: ___________________ (인) {' ':<{W-42}}|",
                 f"+{'=' * W}+",
@@ -2141,7 +2140,7 @@ class ProductionApp:
     # ========================================================
     def _pg_items(self):
         p = self.page_area
-        page_header(p, "품목 관리", "  기계부품 품번 마스터")
+        page_header(p, "품목 관리", "  기계부품 생산품명 마스터")
 
         customers = self.db.query("SELECT id, name FROM customers WHERE active=1")
         cus_names = [r[1] for r in customers]
@@ -2151,28 +2150,28 @@ class ProductionApp:
 
         def _lbl(r, c, t): make_label(f, t, size=9, color=C['secondary'], bg='white').grid(row=r, column=c, sticky='w', padx=6, pady=3)
 
-        _lbl(0, 0, "품번 *");   make_entry(f, vs['part_no'], 14).grid(row=0, column=1, padx=4)
-        _lbl(0, 2, "품명 *");   make_entry(f, vs['name'], 22).grid(row=0, column=3, padx=4)
+        _lbl(0, 0, "생산품명 *"); make_entry(f, vs['name'], 26).grid(row=0, column=1, columnspan=3, padx=4)
         _lbl(0, 4, "재질");     make_entry(f, vs['material'], 12).grid(row=0, column=5, padx=4)
         _lbl(1, 0, "규격");     make_entry(f, vs['spec'], 26).grid(row=1, column=1, columnspan=2, padx=4, pady=4, sticky='w')
         _lbl(1, 3, "단중(kg)"); make_entry(f, vs['weight'], 10).grid(row=1, column=4, padx=4)
         _lbl(2, 0, "고객사");   make_combo(f, vs['customer'], cus_names, width=22).grid(row=2, column=1, padx=4, columnspan=2, sticky='w', pady=4)
 
         wrap = tk.Frame(p, bg=C['bg']); wrap.pack(fill='both', expand=True, padx=20, pady=6)
-        cols = ('품번','품명','규격','재질','단중','고객사')
+        cols = ('생산품명','규격','재질','단중','고객사')
         tree = make_tree(wrap, cols, [110, 200, 220, 100, 70, 160], height=16)
 
         def _load():
             rows = self.db.query("""
-                SELECT i.part_no, i.name, i.spec, i.material, i.unit_weight, COALESCE(c.name,'-')
+                SELECT i.name, i.spec, i.material, i.unit_weight, COALESCE(c.name,'-')
                 FROM items i LEFT JOIN customers c ON i.customer_id=c.id
                 WHERE i.active=1 ORDER BY i.part_no
             """)
             fill_tree(tree, rows, lambda i, r: 'even' if i%2 else '')
 
         def _save():
-            if not vs['part_no'].get() or not vs['name'].get():
-                messagebox.showerror("오류", "품번/품명은 필수입니다."); return
+            if not vs['name'].get():
+                messagebox.showerror("오류", "생산품명은 필수입니다."); return
+            vs['part_no'].set(vs['name'].get())  # part_no 자동
             try: w = float(vs['weight'].get() or 0)
             except: w = 0
             cid = None
