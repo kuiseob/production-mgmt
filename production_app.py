@@ -2478,28 +2478,37 @@ class ProductionApp:
                             fg='#E65100', bg='#FFF3E0')
         tree.bind('<<TreeviewSelect>>', _on_select)
 
-        # 4개 버튼 — 큰 글씨 + 진한 색상
+        # 4개 버튼 — Frame+Label 방식으로 macOS에서도 색상 표시
         btn_row = tk.Frame(f, bg='white')
         btn_row.grid(row=2, column=0, columnspan=8, sticky='ew', pady=(12, 0))
 
-        def _big_btn(parent, text, cmd, bg, fg='white', hover_bg=None):
-            b = tk.Button(parent, text=text,
-                          font=('Malgun Gothic', 13, 'bold'),
-                          bg=bg, fg=fg, activebackground=hover_bg or bg,
-                          activeforeground=fg, relief='flat',
-                          cursor='hand2', padx=22, pady=10,
-                          bd=0, command=cmd)
-            return b
+        def _big_btn(parent, text, cmd, bg, hover_bg, fg='white'):
+            wrap = tk.Frame(parent, bg=bg, bd=0, highlightthickness=0,
+                            cursor='hand2')
+            lbl = tk.Label(wrap, text=text,
+                           font=('Malgun Gothic', 14, 'bold'),
+                           bg=bg, fg=fg, padx=24, pady=12, cursor='hand2')
+            lbl.pack(fill='both', expand=True)
+            def _click(e=None): cmd()
+            def _enter(e=None):
+                wrap.config(bg=hover_bg); lbl.config(bg=hover_bg)
+            def _leave(e=None):
+                wrap.config(bg=bg); lbl.config(bg=bg)
+            for w in (wrap, lbl):
+                w.bind('<Button-1>', _click)
+                w.bind('<Enter>', _enter)
+                w.bind('<Leave>', _leave)
+            return wrap
 
         # 우측부터: 등록(녹색) / 수정(주황) / 삭제(빨강) / 새 입력(회색)
-        _big_btn(btn_row, "  새 고객사 등록  ", _save_new,
-                 bg='#2E7D32', hover_bg='#1B5E20').pack(side='right', padx=4)
-        _big_btn(btn_row, "  고객사 수정  ", _update,
-                 bg='#E65100', hover_bg='#BF360C').pack(side='right', padx=4)
-        _big_btn(btn_row, "  고객사 삭제  ", _delete,
-                 bg='#C62828', hover_bg='#8E0000').pack(side='right', padx=4)
-        _big_btn(btn_row, "  새 입력  ", lambda: _clear_form(),
-                 bg='#546E7A', hover_bg='#37474F').pack(side='right', padx=4)
+        _big_btn(btn_row, "새 고객사 등록", _save_new,
+                 bg='#2E7D32', hover_bg='#1B5E20').pack(side='right', padx=5)
+        _big_btn(btn_row, "고객사 수정", _update,
+                 bg='#E65100', hover_bg='#BF360C').pack(side='right', padx=5)
+        _big_btn(btn_row, "고객사 삭제", _delete,
+                 bg='#C62828', hover_bg='#8E0000').pack(side='right', padx=5)
+        _big_btn(btn_row, "새 입력", lambda: _clear_form(),
+                 bg='#546E7A', hover_bg='#37474F').pack(side='right', padx=5)
 
         _load()
 
