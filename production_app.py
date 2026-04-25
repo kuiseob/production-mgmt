@@ -347,6 +347,42 @@ def make_btn(parent, text, cmd, color=None, **kw):
                      bg=color or C['primary'], fg='white', relief='flat',
                      cursor='hand2', padx=16, pady=6, **kw)
 
+# ─────────────────────────────────────────────
+# 통일된 컬러 액션 버튼 (Frame+Label, macOS Aqua 색상 강제)
+# ─────────────────────────────────────────────
+BTN_THEMES = {
+    'save':    ('#2E7D32', '#1B5E20'),  # 녹색 - 등록/저장
+    'update':  ('#E65100', '#BF360C'),  # 주황 - 수정
+    'delete':  ('#C62828', '#8E0000'),  # 빨강 - 삭제
+    'action':  ('#1565C0', '#0D47A1'),  # 파랑 - 일반 액션 (생성/시작/완료)
+    'export':  ('#5E35B1', '#311B92'),  # 보라 - 출력/저장
+    'neutral': ('#546E7A', '#37474F'),  # 회색 - 보조
+}
+
+def color_btn(parent, text, cmd, theme='save', size=14):
+    """통일된 디자인의 컬러 버튼 (모든 페이지 공용).
+
+    theme: save | update | delete | action | export | neutral
+    """
+    bg, hover = BTN_THEMES.get(theme, BTN_THEMES['save'])
+    wrap = tk.Frame(parent, bg=bg, bd=0, highlightthickness=0, cursor='hand2')
+    lbl = tk.Label(wrap, text=text,
+                   font=('Malgun Gothic', size, 'bold'),
+                   bg=bg, fg='white', padx=22, pady=10, cursor='hand2')
+    lbl.pack(fill='both', expand=True)
+
+    def _click(e=None):
+        commit_inputs(wrap); cmd()
+    def _enter(e=None):
+        wrap.config(bg=hover); lbl.config(bg=hover)
+    def _leave(e=None):
+        wrap.config(bg=bg); lbl.config(bg=bg)
+    for w in (wrap, lbl):
+        w.bind('<Button-1>', _click)
+        w.bind('<Enter>', _enter)
+        w.bind('<Leave>', _leave)
+    return wrap
+
 def make_label(parent, text, bold=False, size=10, color=None, **kw):
     return tk.Label(parent, text=text,
                     font=('Malgun Gothic', size, 'bold' if bold else 'normal'),
@@ -1089,13 +1125,12 @@ class ProductionApp:
             _clear_form()
             _load()
 
-        # 버튼 3종 (수주 등록 / 수정 / 삭제) + 초기화
+        # 통일된 컬러 액션 버튼
         btn_row = tk.Frame(f, bg='white')
-        btn_row.grid(row=5, column=0, columnspan=8, sticky='e', pady=(10, 0))
-        make_btn(btn_row, "🆕 수주 등록", _save_new, color=C['primary']).pack(side='right', padx=4)
-        make_btn(btn_row, "✏ 수주 수정", _update, color=C['accent']).pack(side='right', padx=4)
-        make_btn(btn_row, "🗑 수주 삭제", _delete_selected, color='#D32F2F').pack(side='right', padx=4)
-        make_btn(btn_row, "↺ 새 입력", lambda: _clear_form(), color='#78909C').pack(side='right', padx=4)
+        btn_row.grid(row=5, column=0, columnspan=8, sticky='e', pady=(12, 0))
+        color_btn(btn_row, "수주 등록", _save_new, theme='save').pack(side='right', padx=5)
+        color_btn(btn_row, "수주 수정", _update, theme='update').pack(side='right', padx=5)
+        color_btn(btn_row, "수주 삭제", _delete_selected, theme='delete').pack(side='right', padx=5)
 
         # ── 목록 ──
         make_label(p, " 수주 목록  (행을 클릭하면 수정/삭제 모드로 전환)",
@@ -1216,7 +1251,7 @@ class ProductionApp:
             messagebox.showinfo("완료", f"작업지시 {len(PROCESSES)}건 생성 완료!\n(일반CNC, 복합CNC)")
             _load()
 
-        make_btn(af, "작업지시 자동 생성", _generate, C['accent']).pack(side='right')
+        color_btn(af, "작업지시 자동 생성", _generate, theme='action').pack(side='right', padx=4)
 
     # ========================================================
     # 작업지시
@@ -1322,10 +1357,10 @@ class ProductionApp:
             messagebox.showinfo("완료", "작업 완료 처리!")
             _load()
 
-        make_btn(af, "배정 저장", _assign).grid(row=2, column=4, padx=6)
+        color_btn(af, "배정 저장", _assign, theme='save').grid(row=2, column=4, padx=8)
         bf = tk.Frame(af, bg='white'); bf.grid(row=3, column=0, columnspan=6, pady=8, sticky='e')
-        make_btn(bf, "▶ 시작", _start, C['warning']).pack(side='left', padx=4)
-        make_btn(bf, "✓ 완료", _complete, C['success']).pack(side='left', padx=4)
+        color_btn(bf, "작업 시작", _start, theme='action').pack(side='left', padx=5)
+        color_btn(bf, "작업 완료", _complete, theme='save').pack(side='left', padx=5)
 
     # ========================================================
     # 생산실적
@@ -1408,7 +1443,7 @@ class ProductionApp:
             q_v.set(''); d_v.set('0'); m_v.set('')
             _load()
 
-        make_btn(f, "실적 등록", _save, C['success']).grid(row=4, column=5, pady=8, sticky='e')
+        color_btn(f, "실적 등록", _save, theme='save').grid(row=4, column=5, pady=10, sticky='e')
 
     # ========================================================
     # 품질검사
@@ -1498,7 +1533,7 @@ class ProductionApp:
             s_v.set(''); d_v.set('0'); r_v.set(''); m_v.set('')
             _load()
 
-        make_btn(f, "검사 결과 저장", _save, C['success']).grid(row=6, column=5, pady=8, sticky='e')
+        color_btn(f, "검사 결과 저장", _save, theme='save').grid(row=6, column=5, pady=10, sticky='e')
 
     # ========================================================
     # 출하 관리
@@ -1569,7 +1604,7 @@ class ProductionApp:
             sel[0] = None; sel_var.set("출하할 주문을 선택하세요")
             _load()
 
-        make_btn(f, "출하 등록", _save, C['accent']).grid(row=4, column=5, pady=8, sticky='e')
+        color_btn(f, "출하 등록", _save, theme='save').grid(row=4, column=5, pady=10, sticky='e')
 
         # 출하 이력
         make_label(p, " 출하 이력", bold=True, size=10, bg=C['bg']).pack(anchor='w', padx=22, pady=(6, 0))
@@ -1601,7 +1636,7 @@ class ProductionApp:
             card = tk.Frame(btn_row, bg='white', padx=16, pady=20)
             card.pack(side='left', expand=True, fill='both', padx=8)
             make_label(card, title, bold=True, size=12, color=C['primary'], bg='white').pack(pady=4)
-            make_btn(card, "미리보기 / 인쇄", cmd).pack(pady=8)
+            color_btn(card, "미리보기 / 인쇄", cmd, theme='export', size=12).pack(pady=8)
 
         _card("작업지시서",   self._rpt_workorder)
         _card("생산일보",     self._rpt_daily)
@@ -2282,10 +2317,10 @@ class ProductionApp:
                 messagebox.showinfo("저장 완료", f"그래프 저장됨:\n{path}")
 
         # 버튼들
-        make_btn(ctrl, "🔍 조회", _query, color=C['primary']).pack(side='left', padx=(20, 4))
-        make_btn(ctrl, "💾 CSV 저장", _save_csv, color=C['accent']).pack(side='left', padx=4)
-        make_btn(ctrl, "🖨 인쇄", _save_print).pack(side='left', padx=4)
-        make_btn(ctrl, "📊 그래프 저장", _save_graph).pack(side='left', padx=4)
+        color_btn(ctrl, "조회", _query, theme='action', size=12).pack(side='left', padx=(20, 4))
+        color_btn(ctrl, "CSV 저장", _save_csv, theme='export', size=12).pack(side='left', padx=4)
+        color_btn(ctrl, "인쇄", _save_print, theme='export', size=12).pack(side='left', padx=4)
+        color_btn(ctrl, "그래프 저장", _save_graph, theme='export', size=12).pack(side='left', padx=4)
 
         # 초기 활성 탭 표시 (일별)
         tab_btns['일별'].config(bg=C['primary'], fg='white')
@@ -2375,26 +2410,8 @@ class ProductionApp:
             for k in vs: vs[k].set('')
             _load()
 
-        # 저장 버튼 — Frame+Label 방식으로 macOS에서도 색상 표시
-        bg_color = '#1A237E'  # 진한 인디고 (품목관리 테마)
-        hover_bg = '#0D1453'
-        btn_wrap = tk.Frame(f, bg=bg_color, cursor='hand2', bd=0, highlightthickness=0)
-        btn_wrap.grid(row=2, column=5, padx=10, pady=4, sticky='e')
-        btn_lbl = tk.Label(btn_wrap, text="  품목 저장  ",
-                           font=('Malgun Gothic', 14, 'bold'),
-                           bg=bg_color, fg='white', padx=24, pady=10,
-                           cursor='hand2')
-        btn_lbl.pack(fill='both', expand=True)
-        def _click(e=None):
-            commit_inputs(btn_wrap); _save()
-        def _enter(e=None):
-            btn_wrap.config(bg=hover_bg); btn_lbl.config(bg=hover_bg)
-        def _leave(e=None):
-            btn_wrap.config(bg=bg_color); btn_lbl.config(bg=bg_color)
-        for w in (btn_wrap, btn_lbl):
-            w.bind('<Button-1>', _click)
-            w.bind('<Enter>', _enter)
-            w.bind('<Leave>', _leave)
+        # 통일된 컬러 액션 버튼
+        color_btn(f, "품목 저장", _save, theme='save').grid(row=2, column=5, padx=10, pady=4, sticky='e')
 
         _load()
 
@@ -2556,32 +2573,10 @@ class ProductionApp:
         btn_row = tk.Frame(f, bg='white')
         btn_row.grid(row=2, column=0, columnspan=8, sticky='ew', pady=(12, 0))
 
-        def _big_btn(parent, text, cmd, bg, hover_bg, fg='white'):
-            wrap = tk.Frame(parent, bg=bg, bd=0, highlightthickness=0,
-                            cursor='hand2')
-            lbl = tk.Label(wrap, text=text,
-                           font=('Malgun Gothic', 14, 'bold'),
-                           bg=bg, fg=fg, padx=24, pady=12, cursor='hand2')
-            lbl.pack(fill='both', expand=True)
-            def _click(e=None):
-                commit_inputs(wrap); cmd()
-            def _enter(e=None):
-                wrap.config(bg=hover_bg); lbl.config(bg=hover_bg)
-            def _leave(e=None):
-                wrap.config(bg=bg); lbl.config(bg=bg)
-            for w in (wrap, lbl):
-                w.bind('<Button-1>', _click)
-                w.bind('<Enter>', _enter)
-                w.bind('<Leave>', _leave)
-            return wrap
-
-        # 우측부터: 등록(녹색) / 수정(주황) / 삭제(빨강) / 새 입력(회색)
-        _big_btn(btn_row, "새 고객사 등록", _save_new,
-                 bg='#2E7D32', hover_bg='#1B5E20').pack(side='right', padx=5)
-        _big_btn(btn_row, "고객사 수정", _update,
-                 bg='#E65100', hover_bg='#BF360C').pack(side='right', padx=5)
-        _big_btn(btn_row, "고객사 삭제", _delete,
-                 bg='#C62828', hover_bg='#8E0000').pack(side='right', padx=5)
+        # 통일된 컬러 액션 버튼
+        color_btn(btn_row, "고객사 등록", _save_new, theme='save').pack(side='right', padx=5)
+        color_btn(btn_row, "고객사 수정", _update, theme='update').pack(side='right', padx=5)
+        color_btn(btn_row, "고객사 삭제", _delete, theme='delete').pack(side='right', padx=5)
 
         _load()
 
@@ -2623,7 +2618,7 @@ class ProductionApp:
             for k in ('code','name','spec'): vs[k].set('')
             _load()
 
-        make_btn(f, "저장", _save).grid(row=1, column=6, padx=10, pady=4)
+        color_btn(f, "설비 저장", _save, theme='save').grid(row=1, column=6, padx=10, pady=4, sticky='e')
         _load()
 
     # ========================================================
@@ -2672,7 +2667,7 @@ class ProductionApp:
             vs['team'].set('생산팀'); vs['role'].set('production')
             _load()
 
-        make_btn(f, "사용자 등록", _save).grid(row=2, column=7, pady=6, sticky='e')
+        color_btn(f, "사용자 등록", _save, theme='save').grid(row=2, column=7, pady=6, sticky='e')
         _load()
 
 
