@@ -2322,7 +2322,26 @@ class ProductionApp:
             for k in vs: vs[k].set('')
             _load()
 
-        make_btn(f, "저장", _save).grid(row=2, column=5, padx=10, pady=4, sticky='e')
+        # 저장 버튼 — Frame+Label 방식으로 macOS에서도 색상 표시
+        bg_color = '#1A237E'  # 진한 인디고 (품목관리 테마)
+        hover_bg = '#0D1453'
+        btn_wrap = tk.Frame(f, bg=bg_color, cursor='hand2', bd=0, highlightthickness=0)
+        btn_wrap.grid(row=2, column=5, padx=10, pady=4, sticky='e')
+        btn_lbl = tk.Label(btn_wrap, text="  품목 저장  ",
+                           font=('Malgun Gothic', 14, 'bold'),
+                           bg=bg_color, fg='white', padx=24, pady=10,
+                           cursor='hand2')
+        btn_lbl.pack(fill='both', expand=True)
+        def _click(e=None): _save()
+        def _enter(e=None):
+            btn_wrap.config(bg=hover_bg); btn_lbl.config(bg=hover_bg)
+        def _leave(e=None):
+            btn_wrap.config(bg=bg_color); btn_lbl.config(bg=bg_color)
+        for w in (btn_wrap, btn_lbl):
+            w.bind('<Button-1>', _click)
+            w.bind('<Enter>', _enter)
+            w.bind('<Leave>', _leave)
+
         _load()
 
     # ========================================================
