@@ -322,8 +322,27 @@ class DB:
 # ============================================================
 # UI 헬퍼
 # ============================================================
+def commit_inputs(widget):
+    """버튼 클릭 직전 IME/StringVar 강제 동기화 (전 페이지 공용)."""
+    try:
+        top = widget.winfo_toplevel()
+        # 현재 포커스 위젯에서 포커스를 이동시켜 IME 입력 강제 확정
+        try:
+            cur = top.focus_get()
+            if cur is not None:
+                top.focus_set()
+        except Exception:
+            pass
+        top.update_idletasks()
+        top.update()
+    except Exception:
+        pass
+
 def make_btn(parent, text, cmd, color=None, **kw):
-    return tk.Button(parent, text=text, command=cmd,
+    def _wrapped():
+        commit_inputs(parent)
+        cmd()
+    return tk.Button(parent, text=text, command=_wrapped,
                      font=('Malgun Gothic', 10, 'bold'),
                      bg=color or C['primary'], fg='white', relief='flat',
                      cursor='hand2', padx=16, pady=6, **kw)
@@ -2366,7 +2385,8 @@ class ProductionApp:
                            bg=bg_color, fg='white', padx=24, pady=10,
                            cursor='hand2')
         btn_lbl.pack(fill='both', expand=True)
-        def _click(e=None): _save()
+        def _click(e=None):
+            commit_inputs(btn_wrap); _save()
         def _enter(e=None):
             btn_wrap.config(bg=hover_bg); btn_lbl.config(bg=hover_bg)
         def _leave(e=None):
@@ -2543,7 +2563,8 @@ class ProductionApp:
                            font=('Malgun Gothic', 14, 'bold'),
                            bg=bg, fg=fg, padx=24, pady=12, cursor='hand2')
             lbl.pack(fill='both', expand=True)
-            def _click(e=None): cmd()
+            def _click(e=None):
+                commit_inputs(wrap); cmd()
             def _enter(e=None):
                 wrap.config(bg=hover_bg); lbl.config(bg=hover_bg)
             def _leave(e=None):
