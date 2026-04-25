@@ -985,11 +985,11 @@ class ProductionApp:
         memo_var = tk.StringVar()
         make_entry(f, memo_var, 50).grid(row=4, column=1, columnspan=5, padx=4, sticky='w', pady=4)
 
-        # 편집 모드: None=신규 등록, 정수=해당 order id 수정
+        # 편집 상태 표시: None=신규 입력, 정수=기존 수주 수정
         edit_id = [None]
-        mode_lbl = tk.Label(f, text="🆕 신규 등록 모드",
-                            font=('Malgun Gothic', 10, 'bold'),
-                            bg='white', fg=C['primary'])
+        mode_lbl = tk.Label(f, text="👉 새 수주 입력 중",
+                            font=('Malgun Gothic', 11, 'bold'),
+                            bg='#E8F5E9', fg='#2E7D32', padx=10, pady=4)
         mode_lbl.grid(row=0, column=6, columnspan=2, sticky='e', padx=8)
 
         def _clear_form():
@@ -998,7 +998,7 @@ class ProductionApp:
             for v in [cus_var, item_var, qty_var, memo_var]: v.set('')
             odate_var.set(datetime.now().strftime("%Y-%m-%d"))
             ddate_var.set((datetime.now() + timedelta(days=14)).strftime("%Y-%m-%d"))
-            mode_lbl.config(text="🆕 신규 등록 모드", fg=C['primary'])
+            mode_lbl.config(text="👉 새 수주 입력 중", fg='#2E7D32', bg='#E8F5E9')
 
         def _save_new():
             if edit_id[0] is not None:
@@ -1131,7 +1131,8 @@ class ProductionApp:
             odate_var.set(r[5] or '')
             ddate_var.set(r[6] or '')
             memo_var.set(r[7] or '')
-            mode_lbl.config(text=f"✏ 수정 모드 ({r[1]})", fg=C['accent'])
+            mode_lbl.config(text=f"✏ 기존 수주 [{r[1]}] 수정 중",
+                            fg='#E65100', bg='#FFF3E0')
         tree.bind('<<TreeviewSelect>>', _on_select)
 
         _load()
@@ -2338,11 +2339,11 @@ class ProductionApp:
             make_label(f, lbl, size=9, color=C['secondary'], bg='white').grid(row=i//3, column=(i%3)*2, sticky='w', padx=6, pady=3)
             make_entry(f, vs[key], w).grid(row=i//3, column=(i%3)*2+1, padx=4)
 
-        # 모드 표시
+        # 현재 입력 상태 안내
         edit_id = [None]
-        mode_lbl = tk.Label(f, text="🆕 신규 등록 모드",
-                            font=('Malgun Gothic', 10, 'bold'),
-                            bg='white', fg=C['primary'])
+        mode_lbl = tk.Label(f, text="👉 새 고객사 입력 중",
+                            font=('Malgun Gothic', 11, 'bold'),
+                            bg='#E8F5E9', fg='#2E7D32', padx=10, pady=4)
         mode_lbl.grid(row=0, column=6, sticky='e', padx=8)
 
         wrap = tk.Frame(p, bg=C['bg']); wrap.pack(fill='both', expand=True, padx=20, pady=6)
@@ -2356,25 +2357,51 @@ class ProductionApp:
         def _clear_form():
             edit_id[0] = None
             for k in vs: vs[k].set('')
-            mode_lbl.config(text="🆕 신규 등록 모드", fg=C['primary'])
+            mode_lbl.config(text="👉 새 고객사 입력 중", fg='#2E7D32', bg='#E8F5E9')
             tree.selection_remove(tree.selection())
 
         def _save_new():
+            # 수정 모드에서 등록 버튼 누르면 폼만 비움 (취소)
             if edit_id[0] is not None:
-                if not messagebox.askyesno("확인", "현재 수정 모드입니다.\n신규 등록으로 전환할까요?"):
+                if not messagebox.askyesno("확인", "지금은 기존 고객사를 '수정' 하는 화면입니다.\n신규 입력으로 전환할까요?\n\n(예 = 폼 비우기, 아니오 = 그대로)"):
                     return
                 _clear_form(); return
-            if not vs['code'].get() or not vs['name'].get():
-                messagebox.showerror("오류", "코드/회사명은 필수입니다."); return
-            dup = self.db.query("SELECT id FROM customers WHERE code=?", (vs['code'].get(),))
+
+            code = vs['code'].get().strip()
+            name = vs['name'].get().strip()
+            if not code or not name:
+                messagebox.showerror("입력 오류", "코드와 회사명은 반드시 입력해야 합니다."); return
+
+            # 중복 검사 — 활성/삭제된 고객 모두 확인
+            dup = self.db.query("SELECT id, active FROM customers WHERE code=?", (code,))
             if dup:
-                messagebox.showerror("오류", f"이미 존재하는 고객사 코드입니다: {vs['code'].get()}"); return
-            self.db.execute("""
-                INSERT INTO customers(code,name,contact,phone,email)
-                VALUES(?,?,?,?,?)
-            """, (vs['code'].get(), vs['name'].get(), vs['contact'].get(),
-                  vs['phone'].get(), vs['email'].get()))
-            messagebox.showinfo("완료", f"고객사 [{vs['name'].get()}] 등록 완료!")
+                row_id, active = dup[0][0], dup[0][1]
+                if active == 1:
+                    messagebox.showerror("등록 실패",
+                        f"코드 [{code}] 는 이미 사용 중입니다.\n다른 코드를 입력하세요.")
+                    return
+                else:
+                    # 삭제된 고객을 같은 코드로 다시 등록 → 복원 + 정보 갱신
+                    if not messagebox.askyesno("복원",
+                        f"코드 [{code}] 는 이전에 삭제된 고객입니다.\n복원하고 정보를 새로 갱신할까요?"):
+                        return
+                    self.db.execute("""
+                        UPDATE customers SET name=?, contact=?, phone=?, email=?, active=1
+                        WHERE id=?
+                    """, (name, vs['contact'].get(), vs['phone'].get(),
+                          vs['email'].get(), row_id))
+                    messagebox.showinfo("복원 완료", f"고객사 [{name}] 가 복원/등록되었습니다.")
+                    _clear_form(); _load(); return
+
+            # 신규 등록
+            try:
+                self.db.execute("""
+                    INSERT INTO customers(code,name,contact,phone,email)
+                    VALUES(?,?,?,?,?)
+                """, (code, name, vs['contact'].get(), vs['phone'].get(), vs['email'].get()))
+            except Exception as e:
+                messagebox.showerror("등록 실패", f"DB 오류: {e}"); return
+            messagebox.showinfo("등록 완료", f"고객사 [{name}] 가 등록되었습니다.")
             _clear_form(); _load()
 
         def _update():
@@ -2418,7 +2445,8 @@ class ProductionApp:
             vs['code'].set(r[1] or '');     vs['name'].set(r[2] or '')
             vs['contact'].set(r[3] or '');  vs['phone'].set(r[4] or '')
             vs['email'].set(r[5] or '')
-            mode_lbl.config(text=f"✏ 수정 모드 ({r[1]})", fg=C['accent'])
+            mode_lbl.config(text=f"✏ 기존 고객 [{r[2]}] 수정 중",
+                            fg='#E65100', bg='#FFF3E0')
         tree.bind('<<TreeviewSelect>>', _on_select)
 
         # 4개 버튼
