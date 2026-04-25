@@ -2284,14 +2284,32 @@ class ProductionApp:
 
         f = tk.Frame(p, bg='white', padx=20, pady=12); f.pack(fill='x', padx=20, pady=12)
         vs = {k: tk.StringVar() for k in ('part_no','name','spec','material','weight','customer')}
+        entries = {}  # IME 미커밋 대비 직접 .get() 백업
 
         def _lbl(r, c, t): make_label(f, t, size=9, color=C['secondary'], bg='white').grid(row=r, column=c, sticky='w', padx=6, pady=3)
 
-        _lbl(0, 0, "생산품명 *"); make_entry(f, vs['name'], 26).grid(row=0, column=1, columnspan=3, padx=4)
-        _lbl(0, 4, "재질");     make_entry(f, vs['material'], 12).grid(row=0, column=5, padx=4)
-        _lbl(1, 0, "규격");     make_entry(f, vs['spec'], 26).grid(row=1, column=1, columnspan=2, padx=4, pady=4, sticky='w')
-        _lbl(1, 3, "단중(kg)"); make_entry(f, vs['weight'], 10).grid(row=1, column=4, padx=4)
-        _lbl(2, 0, "고객사");   make_combo(f, vs['customer'], cus_names, width=22).grid(row=2, column=1, padx=4, columnspan=2, sticky='w', pady=4)
+        def _ent(key, w):
+            e = make_entry(f, vs[key], w)
+            entries[key] = e
+            return e
+
+        _lbl(0, 0, "생산품명 *"); _ent('name', 26).grid(row=0, column=1, columnspan=3, padx=4)
+        _lbl(0, 4, "재질");     _ent('material', 12).grid(row=0, column=5, padx=4)
+        _lbl(1, 0, "규격");     _ent('spec', 26).grid(row=1, column=1, columnspan=2, padx=4, pady=4, sticky='w')
+        _lbl(1, 3, "단중(kg)"); _ent('weight', 10).grid(row=1, column=4, padx=4)
+        _lbl(2, 0, "고객사")
+        cus_combo = make_combo(f, vs['customer'], cus_names, width=22)
+        cus_combo.grid(row=2, column=1, padx=4, columnspan=2, sticky='w', pady=4)
+        entries['customer'] = cus_combo
+
+        def _val(key):
+            try:
+                v = entries[key].get()
+            except Exception:
+                v = ''
+            if not v:
+                v = vs[key].get()
+            return (v or '').strip()
 
         wrap = tk.Frame(p, bg=C['bg']); wrap.pack(fill='both', expand=True, padx=20, pady=6)
         cols = ('생산품명','규격','재질','단중','고객사')
@@ -2306,19 +2324,35 @@ class ProductionApp:
             fill_tree(tree, rows, lambda i, r: 'even' if i%2 else '')
 
         def _save():
-            if not vs['name'].get():
-                messagebox.showerror("오류", "생산품명은 필수입니다."); return
-            vs['part_no'].set(vs['name'].get())  # part_no 자동
-            try: w = float(vs['weight'].get() or 0)
+            try:
+                p.focus_set(); p.update_idletasks()
+            except: pass
+            name     = _val('name')
+            spec     = _val('spec')
+            material = _val('material')
+            weight_s = _val('weight')
+            customer = _val('customer')
+
+            if not name:
+                messagebox.showerror("입력 오류",
+                    f"생산품명은 반드시 입력해야 합니다.\n\n"
+                    f"현재 입력 값:\n"
+                    f"  · 생산품명 = '{name}'\n\n"
+                    f"한/영 키 또는 입력 확정(Enter/Tab) 여부를 확인하세요.")
+                return
+            try: w = float(weight_s or 0)
             except: w = 0
             cid = None
-            if vs['customer'].get():
-                cid = customers[cus_names.index(vs['customer'].get())][0]
-            self.db.execute("""
-                INSERT OR REPLACE INTO items(part_no,name,spec,material,unit_weight,customer_id)
-                VALUES(?,?,?,?,?,?)
-            """, (vs['part_no'].get(), vs['name'].get(), vs['spec'].get(),
-                  vs['material'].get(), w, cid))
+            if customer and customer in cus_names:
+                cid = customers[cus_names.index(customer)][0]
+            try:
+                self.db.execute("""
+                    INSERT OR REPLACE INTO items(part_no,name,spec,material,unit_weight,customer_id)
+                    VALUES(?,?,?,?,?,?)
+                """, (name, name, spec, material, w, cid))
+            except Exception as e:
+                messagebox.showerror("저장 실패", f"DB 오류: {e}"); return
+            messagebox.showinfo("저장 완료", f"품목 [{name}] 가 저장되었습니다.")
             for k in vs: vs[k].set('')
             _load()
 
