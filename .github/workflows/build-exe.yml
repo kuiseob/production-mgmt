@@ -31,13 +31,16 @@ jobs:
       - name: 아이콘 생성
         run: python create_ico.py
 
-      - name: EXE 빌드
+      - name: EXE 빌드 (회사 정보/버전 메타데이터 포함, UPX 비활성화)
         run: |
           pyinstaller `
             --onefile `
             --windowed `
-            --name="production" `
+            --noupx `
+            --clean `
+            --name="SEOJIN_Production" `
             --icon=production.ico `
+            --version-file=version_info.txt `
             --hidden-import=tkinter `
             --hidden-import=tkinter.ttk `
             --hidden-import=tkinter.filedialog `
@@ -50,6 +53,10 @@ jobs:
 
       - name: EXE 파일 확인
         run: dir dist\
+
+      - name: ZIP 패키징 (선택 다운로드용)
+        run: |
+          Compress-Archive -Path dist\SEOJIN_Production.exe -DestinationPath dist\SEOJIN_Production.zip
 
       - name: 버전 태그 생성
         id: tag
@@ -66,18 +73,37 @@ jobs:
             ## SEO JIN PRECISION 생산관리 시스템 (Windows)
 
             ### 다운로드
-            아래 **Assets** 에서 **production.exe** 클릭
+            - **SEOJIN_Production.exe** — 바로 실행 (단일 파일)
+            - **SEOJIN_Production.zip** — 압축본 (스마트 앱 컨트롤 차단 시 사용)
+
+            ### ⚠ Windows 보안 차단 시 해결 방법
+
+            **방법 1 — 차단 해제 (가장 안전)**
+            1. 다운로드한 EXE 파일을 **마우스 오른쪽 클릭 → 속성**
+            2. 일반 탭 하단의 **"차단 해제"** 체크 → **확인**
+            3. 다시 더블클릭 실행
+
+            **방법 2 — SmartScreen 우회**
+            - "Windows의 PC 보호" 화면 → **추가 정보** → **실행**
+
+            **방법 3 — 스마트 앱 컨트롤 끄기 (마지막 수단)**
+            - 설정 → 개인 정보 및 보안 → Windows 보안 → 앱 및 브라우저 컨트롤
+            - 스마트 앱 컨트롤 설정 → **꺼짐**
+            - ⚠ 한 번 끄면 다시 켤 수 없습니다
 
             ### 사용 방법
-            1. production.exe 다운로드
-            2. 더블클릭 실행 (최초 실행 시 SmartScreen 경고가 나오면 "추가 정보" → "실행")
-            3. 기본 관리자 계정 — ID: admin / PW: admin1234
+            1. EXE 다운로드 → 차단 해제 → 더블클릭 실행
+            2. 인트로 화면 → Enter 키
+            3. 자동 admin 권한으로 진입 (로그인 불필요)
 
             ### 주요 기능
             - 수주 / 생산계획 / 작업지시 / 생산실적 / 품질검사 / 출하 관리
             - 일반CNC + 복합CNC 공정 (28대 설비)
-            - 주문번호 자동채번 (SJ-YYYYMMDD-001)
-            - 보고서 인쇄 미리보기
-          files: dist/production.exe
+            - 통계 (일별/월별/연간) + CSV/PNG/인쇄 저장
+            - 보고서 (작업지시서/생산일보/거래명세서/설비별 가동/그래프)
+            - HP/Samsung 등 모든 프린터 지원
+          files: |
+            dist/SEOJIN_Production.exe
+            dist/SEOJIN_Production.zip
           draft: false
           prerelease: false
