@@ -2333,11 +2333,24 @@ class ProductionApp:
 
         f = tk.Frame(p, bg='white', padx=20, pady=12); f.pack(fill='x', padx=20, pady=12)
         vs = {k: tk.StringVar() for k in ('code','name','contact','phone','email')}
+        entries = {}  # 직접 .get() 호출용 백업
         labels = [("코드 *","code",12), ("회사명 *","name",24), ("담당자","contact",14),
                   ("연락처","phone",16), ("이메일","email",22)]
         for i, (lbl, key, w) in enumerate(labels):
             make_label(f, lbl, size=9, color=C['secondary'], bg='white').grid(row=i//3, column=(i%3)*2, sticky='w', padx=6, pady=3)
-            make_entry(f, vs[key], w).grid(row=i//3, column=(i%3)*2+1, padx=4)
+            e = make_entry(f, vs[key], w)
+            e.grid(row=i//3, column=(i%3)*2+1, padx=4)
+            entries[key] = e
+
+        def _val(key):
+            """StringVar/Entry 양쪽에서 값 읽기 (IME 미커밋 대비)."""
+            try:
+                v = entries[key].get()
+            except Exception:
+                v = ''
+            if not v:
+                v = vs[key].get()
+            return (v or '').strip()
 
         # 현재 입력 상태 안내
         edit_id = [None]
@@ -2361,16 +2374,31 @@ class ProductionApp:
             tree.selection_remove(tree.selection())
 
         def _save_new():
+            # 포커스가 Entry에 있으면 IME 입력 강제 커밋
+            try:
+                p.focus_set(); p.update_idletasks()
+            except: pass
+
             # 수정 모드에서 등록 버튼 누르면 폼만 비움 (취소)
             if edit_id[0] is not None:
                 if not messagebox.askyesno("확인", "지금은 기존 고객사를 '수정' 하는 화면입니다.\n신규 입력으로 전환할까요?\n\n(예 = 폼 비우기, 아니오 = 그대로)"):
                     return
                 _clear_form(); return
 
-            code = vs['code'].get().strip()
-            name = vs['name'].get().strip()
+            code    = _val('code')
+            name    = _val('name')
+            contact = _val('contact')
+            phone   = _val('phone')
+            email   = _val('email')
+
             if not code or not name:
-                messagebox.showerror("입력 오류", "코드와 회사명은 반드시 입력해야 합니다."); return
+                messagebox.showerror("입력 오류",
+                    f"코드와 회사명은 반드시 입력해야 합니다.\n\n"
+                    f"현재 입력 값:\n"
+                    f"  · 코드 = '{code}'\n"
+                    f"  · 회사명 = '{name}'\n\n"
+                    f"한/영 키가 잠겨있는지, 입력이 확정(Enter)되었는지 확인하세요.")
+                return
 
             # 중복 검사 — 활성/삭제된 고객 모두 확인
             dup = self.db.query("SELECT id, active FROM customers WHERE code=?", (code,))
@@ -2381,15 +2409,13 @@ class ProductionApp:
                         f"코드 [{code}] 는 이미 사용 중입니다.\n다른 코드를 입력하세요.")
                     return
                 else:
-                    # 삭제된 고객을 같은 코드로 다시 등록 → 복원 + 정보 갱신
                     if not messagebox.askyesno("복원",
                         f"코드 [{code}] 는 이전에 삭제된 고객입니다.\n복원하고 정보를 새로 갱신할까요?"):
                         return
                     self.db.execute("""
                         UPDATE customers SET name=?, contact=?, phone=?, email=?, active=1
                         WHERE id=?
-                    """, (name, vs['contact'].get(), vs['phone'].get(),
-                          vs['email'].get(), row_id))
+                    """, (name, contact, phone, email, row_id))
                     messagebox.showinfo("복원 완료", f"고객사 [{name}] 가 복원/등록되었습니다.")
                     _clear_form(); _load(); return
 
@@ -2398,24 +2424,27 @@ class ProductionApp:
                 self.db.execute("""
                     INSERT INTO customers(code,name,contact,phone,email)
                     VALUES(?,?,?,?,?)
-                """, (code, name, vs['contact'].get(), vs['phone'].get(), vs['email'].get()))
+                """, (code, name, contact, phone, email))
             except Exception as e:
                 messagebox.showerror("등록 실패", f"DB 오류: {e}"); return
             messagebox.showinfo("등록 완료", f"고객사 [{name}] 가 등록되었습니다.")
             _clear_form(); _load()
 
         def _update():
+            try:
+                p.focus_set(); p.update_idletasks()
+            except: pass
             if edit_id[0] is None:
                 messagebox.showwarning("수정", "수정할 고객사를 목록에서 선택하세요."); return
-            if not vs['code'].get() or not vs['name'].get():
+            code = _val('code'); name = _val('name')
+            if not code or not name:
                 messagebox.showerror("오류", "코드/회사명은 필수입니다."); return
-            if not messagebox.askyesno("확인", f"고객사 [{vs['name'].get()}] 의 내용을 수정하시겠습니까?"):
+            if not messagebox.askyesno("확인", f"고객사 [{name}] 의 내용을 수정하시겠습니까?"):
                 return
             self.db.execute("""
                 UPDATE customers SET code=?, name=?, contact=?, phone=?, email=?
                 WHERE id=?
-            """, (vs['code'].get(), vs['name'].get(), vs['contact'].get(),
-                  vs['phone'].get(), vs['email'].get(), edit_id[0]))
+            """, (code, name, _val('contact'), _val('phone'), _val('email'), edit_id[0]))
             messagebox.showinfo("완료", "고객사 수정 완료!")
             _clear_form(); _load()
 
