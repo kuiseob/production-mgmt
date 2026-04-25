@@ -985,11 +985,35 @@ class ProductionApp:
         memo_var = tk.StringVar()
         make_entry(f, memo_var, 50).grid(row=4, column=1, columnspan=5, padx=4, sticky='w', pady=4)
 
-        def _save():
+        # 편집 모드: None=신규 등록, 정수=해당 order id 수정
+        edit_id = [None]
+        mode_lbl = tk.Label(f, text="🆕 신규 등록 모드",
+                            font=('Malgun Gothic', 10, 'bold'),
+                            bg='white', fg=C['primary'])
+        mode_lbl.grid(row=0, column=6, columnspan=2, sticky='e', padx=8)
+
+        def _clear_form():
+            edit_id[0] = None
+            order_var.set(self.db.next_order_no())
+            for v in [cus_var, item_var, qty_var, memo_var]: v.set('')
+            odate_var.set(datetime.now().strftime("%Y-%m-%d"))
+            ddate_var.set((datetime.now() + timedelta(days=14)).strftime("%Y-%m-%d"))
+            mode_lbl.config(text="🆕 신규 등록 모드", fg=C['primary'])
+
+        def _save_new():
+            if edit_id[0] is not None:
+                if not messagebox.askyesno("확인", "현재 수정 모드입니다.\n신규 등록으로 전환할까요?"):
+                    return
+                _clear_form()
+                return
             if not all([order_var.get(), cus_var.get(), item_var.get(), qty_var.get(), odate_var.get(), ddate_var.get()]):
                 messagebox.showerror("오류", "필수 항목(*)을 모두 입력하세요."); return
             try: q = int(qty_var.get())
             except: messagebox.showerror("오류", "수량은 정수로 입력하세요."); return
+            # 중복 주문번호 방지
+            dup = self.db.query("SELECT id FROM orders WHERE order_no=?", (order_var.get(),))
+            if dup:
+                messagebox.showerror("오류", f"이미 존재하는 주문번호입니다: {order_var.get()}\n'갱신' 버튼으로 새 번호를 받으세요."); return
             cus_id  = customers[cus_names.index(cus_var.get())][0]
             item_id = items[item_disp.index(item_var.get())][0]
             self.db.execute("""
@@ -998,14 +1022,64 @@ class ProductionApp:
             """, (order_var.get(), cus_id, item_id, q, odate_var.get(), ddate_var.get(),
                   memo_var.get(), self.user['id']))
             messagebox.showinfo("완료", f"수주 [{order_var.get()}] 등록 완료!")
-            order_var.set(self.db.next_order_no())
-            for v in [cus_var, item_var, qty_var, memo_var]: v.set('')
+            _clear_form()
             _load()
 
-        make_btn(f, "수주 등록", _save).grid(row=4, column=6, pady=8, sticky='e')
+        def _update():
+            if edit_id[0] is None:
+                messagebox.showwarning("수정", "수정할 수주를 목록에서 선택하세요."); return
+            if not all([cus_var.get(), item_var.get(), qty_var.get(), odate_var.get(), ddate_var.get()]):
+                messagebox.showerror("오류", "필수 항목(*)을 모두 입력하세요."); return
+            try: q = int(qty_var.get())
+            except: messagebox.showerror("오류", "수량은 정수로 입력하세요."); return
+            cus_id  = customers[cus_names.index(cus_var.get())][0]
+            item_id = items[item_disp.index(item_var.get())][0]
+            if not messagebox.askyesno("확인", f"수주 [{order_var.get()}] 의 내용을 수정하시겠습니까?"):
+                return
+            self.db.execute("""
+                UPDATE orders SET customer_id=?, item_id=?, quantity=?,
+                                  order_date=?, due_date=?, memo=?
+                WHERE id=?
+            """, (cus_id, item_id, q, odate_var.get(), ddate_var.get(),
+                  memo_var.get(), edit_id[0]))
+            messagebox.showinfo("완료", f"수주 [{order_var.get()}] 수정 완료!")
+            _clear_form()
+            _load()
+
+        def _delete_selected():
+            ono = order_var.get()
+            row = self.db.query("SELECT id, status FROM orders WHERE order_no=?", (ono,))
+            if not row:
+                messagebox.showwarning("삭제", "삭제할 수주를 목록에서 선택하세요."); return
+            oid, status = row[0][0], row[0][1]
+            wo = self.db.query("SELECT COUNT(*) FROM work_orders WHERE order_id=?", (oid,))[0][0]
+            sh = self.db.query("SELECT COUNT(*) FROM shipments WHERE order_id=?", (oid,))[0][0]
+            warn = ""
+            if wo or sh:
+                warn = f"\n\n⚠ 연관 데이터: 작업지시 {wo}건 / 출하 {sh}건\n   함께 삭제됩니다."
+            if not messagebox.askyesno("삭제 확인",
+                f"수주 [{ono}] (상태: {status}) 를 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.{warn}"):
+                return
+            self.db.execute("DELETE FROM inspections WHERE order_id=?", (oid,))
+            self.db.execute("DELETE FROM shipments WHERE order_id=?", (oid,))
+            self.db.execute("DELETE FROM production_records WHERE wo_id IN (SELECT id FROM work_orders WHERE order_id=?)", (oid,))
+            self.db.execute("DELETE FROM work_orders WHERE order_id=?", (oid,))
+            self.db.execute("DELETE FROM orders WHERE id=?", (oid,))
+            messagebox.showinfo("삭제 완료", f"수주 [{ono}] 가 삭제되었습니다.")
+            _clear_form()
+            _load()
+
+        # 버튼 3종 (수주 등록 / 수정 / 삭제) + 초기화
+        btn_row = tk.Frame(f, bg='white')
+        btn_row.grid(row=5, column=0, columnspan=8, sticky='e', pady=(10, 0))
+        make_btn(btn_row, "🆕 수주 등록", _save_new, color=C['primary']).pack(side='right', padx=4)
+        make_btn(btn_row, "✏ 수주 수정", _update, color=C['accent']).pack(side='right', padx=4)
+        make_btn(btn_row, "🗑 수주 삭제", _delete_selected, color='#D32F2F').pack(side='right', padx=4)
+        make_btn(btn_row, "↺ 새 입력", lambda: _clear_form(), color='#78909C').pack(side='right', padx=4)
 
         # ── 목록 ──
-        make_label(p, " 수주 목록", bold=True, size=11, bg=C['bg']).pack(anchor='w', padx=22, pady=(4, 2))
+        make_label(p, " 수주 목록  (행을 클릭하면 수정/삭제 모드로 전환)",
+                   bold=True, size=11, bg=C['bg']).pack(anchor='w', padx=22, pady=(4, 2))
         wrap = tk.Frame(p, bg=C['bg']); wrap.pack(fill='both', expand=True, padx=20, pady=4)
         cols = ('주문번호', '고객사', '생산품명', '재질', '수량', '수주일', '납기일', '상태')
         ws   = (135, 150, 100, 140, 80, 60, 100, 100, 80)
@@ -1028,6 +1102,37 @@ class ProductionApp:
                 if today <= due <= d7: return 'urgent_tag'
                 return 'even' if i%2 else ''
             fill_tree(tree, rows, tag)
+
+        def _on_select(e):
+            s = tree.selection()
+            if not s: return
+            v = tree.item(s[0])['values']
+            ono = v[0]
+            row = self.db.query("""
+                SELECT o.id, o.order_no, c.name, i.name,
+                       o.quantity, o.order_date, o.due_date, o.memo
+                FROM orders o
+                LEFT JOIN customers c ON o.customer_id=c.id
+                LEFT JOIN items i ON o.item_id=i.id
+                WHERE o.order_no=?
+            """, (ono,))
+            if not row: return
+            r = row[0]
+            edit_id[0] = r[0]
+            order_var.set(r[1])
+            cus_var.set(r[2] or '')
+            # item_disp 에서 정확 매칭되는 항목을 찾아 셋
+            for d in item_disp:
+                if d == r[3]:
+                    item_var.set(d); break
+            else:
+                item_var.set(r[3] or '')
+            qty_var.set(str(r[4] or ''))
+            odate_var.set(r[5] or '')
+            ddate_var.set(r[6] or '')
+            memo_var.set(r[7] or '')
+            mode_lbl.config(text=f"✏ 수정 모드 ({r[1]})", fg=C['accent'])
+        tree.bind('<<TreeviewSelect>>', _on_select)
 
         _load()
 
