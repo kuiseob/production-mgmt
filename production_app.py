@@ -792,6 +792,7 @@ class ProductionApp:
         ]
         if self.user['role'] == 'admin':
             menus += [
+                ('items',      '품목 관리',    '#5C6BC0', '📦'),
                 ('customers',  '고객사 관리',  '#26C6DA', '🏢'),
                 ('equipments', '설비 관리',    '#8D6E63', '🏭'),
             ]
