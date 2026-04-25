@@ -2354,7 +2354,7 @@ class ProductionApp:
 
         # 현재 입력 상태 안내
         edit_id = [None]
-        mode_lbl = tk.Label(f, text="👉 새 고객사 입력 중",
+        mode_lbl = tk.Label(f, text="새 고객사 입력 중",
                             font=('Malgun Gothic', 11, 'bold'),
                             bg='#E8F5E9', fg='#2E7D32', padx=10, pady=4)
         mode_lbl.grid(row=0, column=6, sticky='e', padx=8)
@@ -2370,7 +2370,7 @@ class ProductionApp:
         def _clear_form():
             edit_id[0] = None
             for k in vs: vs[k].set('')
-            mode_lbl.config(text="👉 새 고객사 입력 중", fg='#2E7D32', bg='#E8F5E9')
+            mode_lbl.config(text="새 고객사 입력 중", fg='#2E7D32', bg='#E8F5E9')
             tree.selection_remove(tree.selection())
 
         def _save_new():
@@ -2474,17 +2474,32 @@ class ProductionApp:
             vs['code'].set(r[1] or '');     vs['name'].set(r[2] or '')
             vs['contact'].set(r[3] or '');  vs['phone'].set(r[4] or '')
             vs['email'].set(r[5] or '')
-            mode_lbl.config(text=f"✏ 기존 고객 [{r[2]}] 수정 중",
+            mode_lbl.config(text=f"기존 고객 [{r[2]}] 수정 중",
                             fg='#E65100', bg='#FFF3E0')
         tree.bind('<<TreeviewSelect>>', _on_select)
 
-        # 4개 버튼
+        # 4개 버튼 — 큰 글씨 + 진한 색상
         btn_row = tk.Frame(f, bg='white')
-        btn_row.grid(row=2, column=0, columnspan=8, sticky='e', pady=(8, 0))
-        make_btn(btn_row, "🆕 고객사 등록", _save_new, color=C['primary']).pack(side='right', padx=4)
-        make_btn(btn_row, "✏ 고객사 수정", _update, color=C['accent']).pack(side='right', padx=4)
-        make_btn(btn_row, "🗑 고객사 삭제", _delete, color='#D32F2F').pack(side='right', padx=4)
-        make_btn(btn_row, "↺ 새 입력", lambda: _clear_form(), color='#78909C').pack(side='right', padx=4)
+        btn_row.grid(row=2, column=0, columnspan=8, sticky='ew', pady=(12, 0))
+
+        def _big_btn(parent, text, cmd, bg, fg='white', hover_bg=None):
+            b = tk.Button(parent, text=text,
+                          font=('Malgun Gothic', 13, 'bold'),
+                          bg=bg, fg=fg, activebackground=hover_bg or bg,
+                          activeforeground=fg, relief='flat',
+                          cursor='hand2', padx=22, pady=10,
+                          bd=0, command=cmd)
+            return b
+
+        # 우측부터: 등록(녹색) / 수정(주황) / 삭제(빨강) / 새 입력(회색)
+        _big_btn(btn_row, "  새 고객사 등록  ", _save_new,
+                 bg='#2E7D32', hover_bg='#1B5E20').pack(side='right', padx=4)
+        _big_btn(btn_row, "  고객사 수정  ", _update,
+                 bg='#E65100', hover_bg='#BF360C').pack(side='right', padx=4)
+        _big_btn(btn_row, "  고객사 삭제  ", _delete,
+                 bg='#C62828', hover_bg='#8E0000').pack(side='right', padx=4)
+        _big_btn(btn_row, "  새 입력  ", lambda: _clear_form(),
+                 bg='#546E7A', hover_bg='#37474F').pack(side='right', padx=4)
 
         _load()
 
