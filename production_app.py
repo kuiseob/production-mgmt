@@ -2298,7 +2298,7 @@ class ProductionApp:
     # ========================================================
     def _pg_customers(self):
         p = self.page_area
-        page_header(p, "고객사 관리", "  거래처 등록")
+        page_header(p, "고객사 관리", "  거래처 등록 / 수정 / 삭제")
 
         f = tk.Frame(p, bg='white', padx=20, pady=12); f.pack(fill='x', padx=20, pady=12)
         vs = {k: tk.StringVar() for k in ('code','name','contact','phone','email')}
@@ -2308,6 +2308,13 @@ class ProductionApp:
             make_label(f, lbl, size=9, color=C['secondary'], bg='white').grid(row=i//3, column=(i%3)*2, sticky='w', padx=6, pady=3)
             make_entry(f, vs[key], w).grid(row=i//3, column=(i%3)*2+1, padx=4)
 
+        # 모드 표시
+        edit_id = [None]
+        mode_lbl = tk.Label(f, text="🆕 신규 등록 모드",
+                            font=('Malgun Gothic', 10, 'bold'),
+                            bg='white', fg=C['primary'])
+        mode_lbl.grid(row=0, column=6, sticky='e', padx=8)
+
         wrap = tk.Frame(p, bg=C['bg']); wrap.pack(fill='both', expand=True, padx=20, pady=6)
         cols = ('코드','회사명','담당자','연락처','이메일')
         tree = make_tree(wrap, cols, [100, 220, 130, 150, 200], height=16)
@@ -2316,18 +2323,82 @@ class ProductionApp:
             rows = self.db.query("SELECT code,name,contact,phone,email FROM customers WHERE active=1 ORDER BY code")
             fill_tree(tree, rows, lambda i, r: 'even' if i%2 else '')
 
-        def _save():
+        def _clear_form():
+            edit_id[0] = None
+            for k in vs: vs[k].set('')
+            mode_lbl.config(text="🆕 신규 등록 모드", fg=C['primary'])
+            tree.selection_remove(tree.selection())
+
+        def _save_new():
+            if edit_id[0] is not None:
+                if not messagebox.askyesno("확인", "현재 수정 모드입니다.\n신규 등록으로 전환할까요?"):
+                    return
+                _clear_form(); return
             if not vs['code'].get() or not vs['name'].get():
                 messagebox.showerror("오류", "코드/회사명은 필수입니다."); return
+            dup = self.db.query("SELECT id FROM customers WHERE code=?", (vs['code'].get(),))
+            if dup:
+                messagebox.showerror("오류", f"이미 존재하는 고객사 코드입니다: {vs['code'].get()}"); return
             self.db.execute("""
-                INSERT OR REPLACE INTO customers(code,name,contact,phone,email)
+                INSERT INTO customers(code,name,contact,phone,email)
                 VALUES(?,?,?,?,?)
             """, (vs['code'].get(), vs['name'].get(), vs['contact'].get(),
                   vs['phone'].get(), vs['email'].get()))
-            for k in vs: vs[k].set('')
-            _load()
+            messagebox.showinfo("완료", f"고객사 [{vs['name'].get()}] 등록 완료!")
+            _clear_form(); _load()
 
-        make_btn(f, "저장", _save).grid(row=1, column=5, padx=10, pady=4, sticky='e')
+        def _update():
+            if edit_id[0] is None:
+                messagebox.showwarning("수정", "수정할 고객사를 목록에서 선택하세요."); return
+            if not vs['code'].get() or not vs['name'].get():
+                messagebox.showerror("오류", "코드/회사명은 필수입니다."); return
+            if not messagebox.askyesno("확인", f"고객사 [{vs['name'].get()}] 의 내용을 수정하시겠습니까?"):
+                return
+            self.db.execute("""
+                UPDATE customers SET code=?, name=?, contact=?, phone=?, email=?
+                WHERE id=?
+            """, (vs['code'].get(), vs['name'].get(), vs['contact'].get(),
+                  vs['phone'].get(), vs['email'].get(), edit_id[0]))
+            messagebox.showinfo("완료", "고객사 수정 완료!")
+            _clear_form(); _load()
+
+        def _delete():
+            if edit_id[0] is None:
+                messagebox.showwarning("삭제", "삭제할 고객사를 목록에서 선택하세요."); return
+            cnt = self.db.query("SELECT COUNT(*) FROM orders WHERE customer_id=?", (edit_id[0],))[0][0]
+            warn = ""
+            if cnt:
+                warn = f"\n\n⚠ 이 고객사의 수주 {cnt}건이 존재합니다.\n   삭제하면 수주 목록에서 거래처가 표시되지 않습니다.\n   (수주 데이터 자체는 보존)"
+            if not messagebox.askyesno("삭제 확인",
+                f"고객사 [{vs['name'].get()}] 를 삭제하시겠습니까?{warn}"):
+                return
+            # 소프트 삭제 (active=0) — 관련 수주 데이터 보존
+            self.db.execute("UPDATE customers SET active=0 WHERE id=?", (edit_id[0],))
+            messagebox.showinfo("삭제 완료", f"고객사 [{vs['name'].get()}] 가 삭제되었습니다.")
+            _clear_form(); _load()
+
+        def _on_select(e):
+            s = tree.selection()
+            if not s: return
+            v = tree.item(s[0])['values']
+            row = self.db.query("SELECT id,code,name,contact,phone,email FROM customers WHERE code=?", (v[0],))
+            if not row: return
+            r = row[0]
+            edit_id[0] = r[0]
+            vs['code'].set(r[1] or '');     vs['name'].set(r[2] or '')
+            vs['contact'].set(r[3] or '');  vs['phone'].set(r[4] or '')
+            vs['email'].set(r[5] or '')
+            mode_lbl.config(text=f"✏ 수정 모드 ({r[1]})", fg=C['accent'])
+        tree.bind('<<TreeviewSelect>>', _on_select)
+
+        # 4개 버튼
+        btn_row = tk.Frame(f, bg='white')
+        btn_row.grid(row=2, column=0, columnspan=8, sticky='e', pady=(8, 0))
+        make_btn(btn_row, "🆕 고객사 등록", _save_new, color=C['primary']).pack(side='right', padx=4)
+        make_btn(btn_row, "✏ 고객사 수정", _update, color=C['accent']).pack(side='right', padx=4)
+        make_btn(btn_row, "🗑 고객사 삭제", _delete, color='#D32F2F').pack(side='right', padx=4)
+        make_btn(btn_row, "↺ 새 입력", lambda: _clear_form(), color='#78909C').pack(side='right', padx=4)
+
         _load()
 
     # ========================================================
