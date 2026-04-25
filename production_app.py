@@ -2352,12 +2352,12 @@ class ProductionApp:
                 v = vs[key].get()
             return (v or '').strip()
 
-        # 현재 입력 상태 안내
+        # 편집 상태 추적용 (UI 라벨 없음)
         edit_id = [None]
-        mode_lbl = tk.Label(f, text="새 고객사 입력 중",
-                            font=('Malgun Gothic', 11, 'bold'),
-                            bg='#E8F5E9', fg='#2E7D32', padx=10, pady=4)
-        mode_lbl.grid(row=0, column=6, sticky='e', padx=8)
+
+        class _NoLbl:
+            def config(self, **kw): pass
+        mode_lbl = _NoLbl()
 
         wrap = tk.Frame(p, bg=C['bg']); wrap.pack(fill='both', expand=True, padx=20, pady=6)
         cols = ('코드','회사명','담당자','연락처','이메일')
@@ -2507,8 +2507,6 @@ class ProductionApp:
                  bg='#E65100', hover_bg='#BF360C').pack(side='right', padx=5)
         _big_btn(btn_row, "고객사 삭제", _delete,
                  bg='#C62828', hover_bg='#8E0000').pack(side='right', padx=5)
-        _big_btn(btn_row, "새 입력", lambda: _clear_form(),
-                 bg='#546E7A', hover_bg='#37474F').pack(side='right', padx=5)
 
         _load()
 
