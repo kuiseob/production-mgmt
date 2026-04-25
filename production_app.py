@@ -1948,21 +1948,50 @@ class ProductionApp:
         p = self.page_area
         page_header(p, "통계 (일별 / 월별 / 연간)", "  생산 / 품질 / 출하 통계 집계 및 저장")
 
-        # 컨트롤 바
-        ctrl = tk.Frame(p, bg='white', padx=14, pady=12)
-        ctrl.pack(fill='x', padx=20, pady=(8, 4))
+        # ── 기간 탭 (일별 / 월별 / 연간) ──
+        tab_bar = tk.Frame(p, bg=C['bg'])
+        tab_bar.pack(fill='x', padx=20, pady=(8, 0))
 
-        tk.Label(ctrl, text="기간:", font=('Malgun Gothic', 11, 'bold'),
-                 bg='white', fg=C['primary']).pack(side='left', padx=(4, 6))
         period_var = tk.StringVar(value='일별')
-        period_cb = ttk.Combobox(ctrl, textvariable=period_var,
-                                 values=['일별', '월별', '연간'],
-                                 state='readonly', width=8,
-                                 font=('Malgun Gothic', 11))
-        period_cb.pack(side='left', padx=4)
+        tab_btns = {}
+
+        def _switch_tab(name):
+            period_var.set(name)
+            now = datetime.now()
+            if name == '일별':
+                from_var.set((now - timedelta(days=30)).strftime('%Y-%m-%d'))
+                to_var.set(now.strftime('%Y-%m-%d'))
+            elif name == '월별':
+                from_var.set((now - timedelta(days=365)).replace(day=1).strftime('%Y-%m-%d'))
+                to_var.set(now.strftime('%Y-%m-%d'))
+            else:  # 연간
+                from_var.set(f"{now.year - 4}-01-01")
+                to_var.set(f"{now.year}-12-31")
+            for n, b in tab_btns.items():
+                if n == name:
+                    b.config(bg=C['primary'], fg='white', relief='flat')
+                else:
+                    b.config(bg='#ECEFF1', fg=C['primary'], relief='flat')
+            _query()
+
+        for name, color, emoji in [('일별', '#42A5F5', '📅'),
+                                     ('월별', '#66BB6A', '📆'),
+                                     ('연간', '#AB47BC', '🗓')]:
+            b = tk.Button(tab_bar, text=f"  {emoji}  {name} 통계  ",
+                          font=('Malgun Gothic', 14, 'bold'),
+                          bg='#ECEFF1', fg=C['primary'], relief='flat',
+                          padx=22, pady=12, cursor='hand2',
+                          activebackground=color, activeforeground='white',
+                          command=lambda n=name: _switch_tab(n))
+            b.pack(side='left', padx=4)
+            tab_btns[name] = b
+
+        # 컨트롤 바 (기간 입력 + 구분 + 버튼)
+        ctrl = tk.Frame(p, bg='white', padx=14, pady=12)
+        ctrl.pack(fill='x', padx=20, pady=(6, 4))
 
         tk.Label(ctrl, text="시작:", font=('Malgun Gothic', 10),
-                 bg='white').pack(side='left', padx=(16, 4))
+                 bg='white').pack(side='left', padx=(4, 4))
         from_var = tk.StringVar(value=(datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d'))
         tk.Entry(ctrl, textvariable=from_var, width=12,
                  font=('Malgun Gothic', 11)).pack(side='left', padx=2)
@@ -2237,7 +2266,8 @@ class ProductionApp:
         make_btn(ctrl, "🖨 인쇄", _save_print).pack(side='left', padx=4)
         make_btn(ctrl, "📊 그래프 저장", _save_graph).pack(side='left', padx=4)
 
-        period_cb.bind('<<ComboboxSelected>>', lambda e: _query())
+        # 초기 활성 탭 표시 (일별)
+        tab_btns['일별'].config(bg=C['primary'], fg='white')
         _query()
 
     # ========================================================
