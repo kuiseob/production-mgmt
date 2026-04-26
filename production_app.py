@@ -829,7 +829,7 @@ class ProductionApp:
         self.root.after(1000, self._tick)
 
     def _build_sidebar(self, parent):
-        sb = tk.Frame(parent, bg=C['sidebar_bg'], width=300); sb.pack(side='left', fill='y'); sb.pack_propagate(False)
+        sb = tk.Frame(parent, bg=C['sidebar_bg'], width=285); sb.pack(side='left', fill='y'); sb.pack_propagate(False)
         # (key, 라벨, 아이콘색, 이모지)
         menus = [
             ('dashboard',  '대시보드',     '#42A5F5', '🏠'),
@@ -852,8 +852,8 @@ class ProductionApp:
                 ('equipments', '설비 관리',    '#8D6E63', '🏭'),
             ]
 
-        tk.Label(sb, text="MENU", font=('Malgun Gothic', 12, 'bold'),
-                 fg='#78909C', bg=C['sidebar_bg']).pack(pady=(11, 5))
+        tk.Label(sb, text="MENU", font=('Malgun Gothic', 11, 'bold'),
+                 fg='#78909C', bg=C['sidebar_bg']).pack(pady=(10, 4))
 
         self._sb_btns = {}
         self._sb_meta = {}  # key -> (color, emoji, label)
@@ -871,9 +871,9 @@ class ProductionApp:
             bar.pack(side='left', fill='y')
 
             btn = tk.Button(row, text=f"  {emoji}  {label}",
-                            font=('Malgun Gothic', 15, 'bold'),
+                            font=('Malgun Gothic', 14, 'bold'),
                             fg='#000000', bg=C['sidebar_bg'],
-                            relief='flat', anchor='w', cursor='hand2', pady=8,
+                            relief='flat', anchor='w', cursor='hand2', pady=7,
                             activebackground=color, activeforeground='black',
                             command=lambda k=key: self._nav(k))
             btn.pack(side='left', fill='x', expand=True)
