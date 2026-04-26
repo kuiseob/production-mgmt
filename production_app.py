@@ -1357,10 +1357,12 @@ class ProductionApp:
             messagebox.showinfo("완료", "작업 완료 처리!")
             _load()
 
-        color_btn(af, "배정 저장", _assign, theme='save').grid(row=2, column=4, padx=8)
-        bf = tk.Frame(af, bg='white'); bf.grid(row=3, column=0, columnspan=6, pady=8, sticky='e')
+        # 3개 버튼을 한 줄에 우측 정렬 (배정 저장 / 작업 시작 / 작업 완료)
+        bf = tk.Frame(af, bg='white')
+        bf.grid(row=3, column=0, columnspan=6, pady=(14, 4), sticky='e', padx=4)
+        color_btn(bf, "배정 저장", _assign, theme='save').pack(side='left', padx=5)
         color_btn(bf, "작업 시작", _start, theme='action').pack(side='left', padx=5)
-        color_btn(bf, "작업 완료", _complete, theme='save').pack(side='left', padx=5)
+        color_btn(bf, "작업 완료", _complete, theme='update').pack(side='left', padx=5)
 
     # ========================================================
     # 생산실적
