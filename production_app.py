@@ -359,7 +359,7 @@ BTN_THEMES = {
     'neutral': ('#546E7A', '#37474F'),  # 회색 - 보조
 }
 
-def color_btn(parent, text, cmd, theme='save', size=14):
+def color_btn(parent, text, cmd, theme='save', size=14, padx=22, pady=10):
     """통일된 디자인의 컬러 버튼 (모든 페이지 공용).
 
     theme: save | update | delete | action | export | neutral
@@ -368,7 +368,7 @@ def color_btn(parent, text, cmd, theme='save', size=14):
     wrap = tk.Frame(parent, bg=bg, bd=0, highlightthickness=0, cursor='hand2')
     lbl = tk.Label(wrap, text=text,
                    font=('Malgun Gothic', size, 'bold'),
-                   bg=bg, fg='white', padx=22, pady=10, cursor='hand2')
+                   bg=bg, fg='white', padx=padx, pady=pady, cursor='hand2')
     lbl.pack(fill='both', expand=True)
 
     def _click(e=None):
@@ -1638,7 +1638,8 @@ class ProductionApp:
             card = tk.Frame(btn_row, bg='white', padx=16, pady=20)
             card.pack(side='left', expand=True, fill='both', padx=8)
             make_label(card, title, bold=True, size=12, color=C['primary'], bg='white').pack(pady=4)
-            color_btn(card, "미리보기 / 인쇄", cmd, theme='export', size=12).pack(pady=8)
+            color_btn(card, "미리보기 / 인쇄", cmd, theme='export',
+                      size=11, padx=18, pady=8).pack(pady=8)
 
         _card("작업지시서",   self._rpt_workorder)
         _card("생산일보",     self._rpt_daily)
