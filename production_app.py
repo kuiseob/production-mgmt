@@ -1015,20 +1015,23 @@ class ProductionApp:
         _lbl(1, 0, "주문번호 *")
         on_entry = tk.Entry(f, textvariable=order_var,
                             font=('Malgun Gothic', 13, 'bold'), width=22,
-                            fg='#00695C', bg='#E0F2F1', relief='flat', bd=4)
+                            fg='#00695C', relief='flat', bd=4)
         on_entry.grid(row=1, column=1, padx=4, pady=4, columnspan=2, sticky='w')
 
         _lbl(1, 3, "고객사 *")
         cus_var = tk.StringVar()
-        make_combo(f, cus_var, cus_names, width=22).grid(row=1, column=4, padx=4, columnspan=2, sticky='w')
+        cus_combo = make_combo(f, cus_var, cus_names, width=22)
+        cus_combo.grid(row=1, column=4, padx=4, columnspan=2, sticky='w')
 
         _lbl(2, 0, "생산품명 *")
         item_var = tk.StringVar()
-        make_combo(f, item_var, item_disp, width=30).grid(row=2, column=1, padx=4, columnspan=3, sticky='w', pady=4)
+        item_combo = make_combo(f, item_var, item_disp, width=30)
+        item_combo.grid(row=2, column=1, padx=4, columnspan=3, sticky='w', pady=4)
 
         _lbl(2, 4, "수량 *")
         qty_var = tk.StringVar()
-        make_entry(f, qty_var, 12).grid(row=2, column=5, padx=4)
+        qty_entry = make_entry(f, qty_var, 12)
+        qty_entry.grid(row=2, column=5, padx=4)
 
         # ── 날짜 입력 (단일 Entry "YYYY-MM-DD" + 자동 포맷 + 빠른 버튼) ──
         now = datetime.now()
@@ -1092,6 +1095,14 @@ class ProductionApp:
             _sync_dates()
             mode_lbl.config(text="👉 새 수주 입력 중", fg='#2E7D32', bg='#E8F5E9')
 
+        def _read(widget, var):
+            """Entry/Combobox에서 값 직접 읽기 (textvariable 미동기화 대비)."""
+            try:
+                v = widget.get()
+                if v: return v.strip()
+            except Exception: pass
+            return (var.get() or '').strip()
+
         def _save_new():
             _sync_dates()
             if edit_id[0] is not None:
@@ -1099,12 +1110,12 @@ class ProductionApp:
                     return
                 _clear_form()
                 return
-            ono   = (order_var.get() or '').strip()
-            cname = (cus_var.get() or '').strip()
-            iname = (item_var.get() or '').strip()
-            qty_s = (qty_var.get() or '').strip()
-            od    = (odate_var.get() or '').strip()
-            dd    = (ddate_var.get() or '').strip()
+            ono   = _read(on_entry, order_var)
+            cname = _read(cus_combo, cus_var)
+            iname = _read(item_combo, item_var)
+            qty_s = _read(qty_entry, qty_var)
+            od    = _read(odate_ent, odate_var)
+            dd    = _read(ddate_ent, ddate_var)
 
             if not ono or not cname or not iname or not qty_s or not od or not dd:
                 messagebox.showerror("입력 오류",
@@ -1168,21 +1179,39 @@ class ProductionApp:
             _sync_dates()
             if edit_id[0] is None:
                 messagebox.showwarning("수정", "수정할 수주를 목록에서 선택하세요."); return
-            if not all([cus_var.get(), item_var.get(), qty_var.get(), odate_var.get(), ddate_var.get()]):
+            ono   = _read(on_entry, order_var)
+            cname = _read(cus_combo, cus_var)
+            iname = _read(item_combo, item_var)
+            qty_s = _read(qty_entry, qty_var)
+            od    = _read(odate_ent, odate_var)
+            dd    = _read(ddate_ent, ddate_var)
+            if not all([cname, iname, qty_s, od, dd]):
                 messagebox.showerror("오류", "필수 항목(*)을 모두 입력하세요."); return
-            try: q = int(qty_var.get())
+            try: q = int(qty_s)
             except: messagebox.showerror("오류", "수량은 정수로 입력하세요."); return
-            cus_id  = customers[cus_names.index(cus_var.get())][0]
-            item_id = items[item_disp.index(item_var.get())][0]
-            if not messagebox.askyesno("확인", f"수주 [{order_var.get()}] 의 내용을 수정하시겠습니까?"):
+            # 고객사/품목 매칭
+            cus_id = None
+            if cname in cus_names:
+                cus_id = customers[cus_names.index(cname)][0]
+            else:
+                row = self.db.query("SELECT id FROM customers WHERE name=? AND active=1", (cname,))
+                if row: cus_id = row[0][0]
+            item_id = None
+            if iname in item_disp:
+                item_id = items[item_disp.index(iname)][0]
+            else:
+                row = self.db.query("SELECT id FROM items WHERE name=? AND active=1", (iname,))
+                if row: item_id = row[0][0]
+            if cus_id is None or item_id is None:
+                messagebox.showerror("오류", "고객사 또는 품목을 찾을 수 없습니다."); return
+            if not messagebox.askyesno("확인", f"수주 [{ono}] 의 내용을 수정하시겠습니까?"):
                 return
             self.db.execute("""
                 UPDATE orders SET customer_id=?, item_id=?, quantity=?,
                                   order_date=?, due_date=?, memo=?
                 WHERE id=?
-            """, (cus_id, item_id, q, odate_var.get(), ddate_var.get(),
-                  memo_var.get(), edit_id[0]))
-            messagebox.showinfo("완료", f"수주 [{order_var.get()}] 수정 완료!")
+            """, (cus_id, item_id, q, od, dd, memo_var.get(), edit_id[0]))
+            messagebox.showinfo("완료", f"수주 [{ono}] 수정 완료!")
             _clear_form()
             _load()
 
