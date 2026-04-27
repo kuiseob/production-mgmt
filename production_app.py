@@ -2093,7 +2093,11 @@ class ProductionApp:
 
         def _draw():
             fig.clear()
-            kind = kind_var.get()
+            # macOS Tk: textvariable가 미동기화될 수 있어 위젯에서 직접 읽기
+            try:
+                kind = (cb.get() or kind_var.get()).strip()
+            except Exception:
+                kind = kind_var.get()
             ax = fig.add_subplot(111)
 
             if kind == '일별 생산량 추이':
@@ -2230,7 +2234,9 @@ class ProductionApp:
             fig.tight_layout()
             canvas.draw()
 
+        # 콤보 변경 → 즉시 다시 그리기 (이중 안전장치)
         cb.bind('<<ComboboxSelected>>', lambda e: _draw())
+        kind_var.trace_add('write', lambda *a: _draw())
         tk.Button(top, text="🔄 새로고침", font=('Malgun Gothic', 10, 'bold'),
                   bg=C['accent'], fg='white', relief='flat',
                   cursor='hand2', padx=12, command=_draw).pack(side='left', padx=10)
