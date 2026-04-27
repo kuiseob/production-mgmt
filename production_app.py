@@ -1602,23 +1602,41 @@ class ProductionApp:
         def _lbl(r, c, t): make_label(f, t, size=9, color=C['secondary'], bg='white').grid(row=r, column=c, sticky='w', padx=6, pady=3)
 
         _lbl(2, 0, "작업일 *");    dt_v = tk.StringVar(value=datetime.now().strftime("%Y-%m-%d"))
-        make_entry(f, dt_v, 14).grid(row=2, column=1, padx=4)
-        _lbl(2, 2, "양품 수량 *"); q_v  = tk.StringVar(); make_entry(f, q_v, 10).grid(row=2, column=3, padx=4)
-        _lbl(2, 4, "불량 수량");   d_v  = tk.StringVar(value='0'); make_entry(f, d_v, 10).grid(row=2, column=5, padx=4)
-        _lbl(3, 0, "비고");         m_v  = tk.StringVar(); make_entry(f, m_v, 40).grid(row=3, column=1, columnspan=4, padx=4, sticky='w')
+        dt_e = make_entry(f, dt_v, 14); dt_e.grid(row=2, column=1, padx=4)
+        _lbl(2, 2, "양품 수량 *"); q_v  = tk.StringVar()
+        q_e = make_entry(f, q_v, 10); q_e.grid(row=2, column=3, padx=4)
+        _lbl(2, 4, "불량 수량");   d_v  = tk.StringVar(value='0')
+        d_e = make_entry(f, d_v, 10); d_e.grid(row=2, column=5, padx=4)
+        _lbl(3, 0, "비고");         m_v  = tk.StringVar()
+        m_e = make_entry(f, m_v, 40); m_e.grid(row=3, column=1, columnspan=4, padx=4, sticky='w')
+
+        def _read(widget, var, default=''):
+            try:
+                v = widget.get()
+                if v: return v.strip()
+            except Exception: pass
+            return (var.get() or default).strip()
 
         def _save():
             if not sel_id[0]:
                 messagebox.showerror("오류", "작업을 선택하세요."); return
+            q_s = _read(q_e, q_v)
+            d_s = _read(d_e, d_v, '0')
+            dt_s = _read(dt_e, dt_v)
+            m_s = _read(m_e, m_v)
+            if not q_s:
+                messagebox.showerror("입력 오류",
+                    f"양품 수량을 입력하세요.\n현재 값: '{q_s}'"); return
             try:
-                q = int(q_v.get()); d = int(d_v.get() or 0)
+                q = int(q_s); d = int(d_s or 0)
             except:
-                messagebox.showerror("오류", "수량은 정수로 입력하세요."); return
+                messagebox.showerror("오류",
+                    f"수량은 정수로 입력하세요.\n양품: '{q_s}'  불량: '{d_s}'"); return
             wo = self.db.query("SELECT equipment_id, worker_id FROM work_orders WHERE id=?", (sel_id[0],))[0]
             self.db.execute("""
                 INSERT INTO production_records(wo_id,work_date,qty,defect_qty,worker_id,equipment_id,memo)
                 VALUES(?,?,?,?,?,?,?)
-            """, (sel_id[0], dt_v.get(), q, d, wo[1] or self.user['id'], wo[0], m_v.get()))
+            """, (sel_id[0], dt_s, q, d, wo[1] or self.user['id'], wo[0], m_s))
             # 누적 업데이트
             tot = self.db.query("SELECT SUM(qty), SUM(defect_qty) FROM production_records WHERE wo_id=?", (sel_id[0],))[0]
             self.db.execute("UPDATE work_orders SET done_qty=?, defect_qty=? WHERE id=?",
@@ -1687,10 +1705,11 @@ class ProductionApp:
 
         _lbl(2, 0, "검사구분")
         type_v = tk.StringVar(value='최종검사')
-        make_combo(f, type_v, ['자주검사', '최종검사'], width=12).grid(row=2, column=1, padx=4)
+        type_e = make_combo(f, type_v, ['자주검사', '최종검사'], width=12); type_e.grid(row=2, column=1, padx=4)
         _lbl(2, 2, "검사일 *");  dt_v = tk.StringVar(value=datetime.now().strftime("%Y-%m-%d"))
-        make_entry(f, dt_v, 14).grid(row=2, column=3, padx=4)
-        _lbl(2, 4, "샘플수");    s_v = tk.StringVar(); make_entry(f, s_v, 8).grid(row=2, column=5, padx=4)
+        dt_e = make_entry(f, dt_v, 14); dt_e.grid(row=2, column=3, padx=4)
+        _lbl(2, 4, "샘플수");    s_v = tk.StringVar()
+        s_e = make_entry(f, s_v, 8); s_e.grid(row=2, column=5, padx=4)
 
         _lbl(3, 0, "결과 *")
         res_v = tk.StringVar(value='합격')
@@ -1700,19 +1719,38 @@ class ProductionApp:
         tk.Radiobutton(rf, text="불합격", variable=res_v, value='불합격',
                        bg='white', fg=C['danger'], font=('Malgun Gothic', 11, 'bold')).pack(side='left', padx=12)
 
-        _lbl(3, 2, "불량수");      d_v = tk.StringVar(value='0'); make_entry(f, d_v, 8).grid(row=3, column=3, padx=4)
-        _lbl(4, 0, "불량사유");    r_v = tk.StringVar(); make_entry(f, r_v, 40).grid(row=4, column=1, columnspan=4, padx=4, sticky='w', pady=4)
-        _lbl(5, 0, "비고");        m_v = tk.StringVar(); make_entry(f, m_v, 40).grid(row=5, column=1, columnspan=4, padx=4, sticky='w')
+        _lbl(3, 2, "불량수");      d_v = tk.StringVar(value='0')
+        d_e = make_entry(f, d_v, 8); d_e.grid(row=3, column=3, padx=4)
+        _lbl(4, 0, "불량사유");    r_v = tk.StringVar()
+        r_e = make_entry(f, r_v, 40); r_e.grid(row=4, column=1, columnspan=4, padx=4, sticky='w', pady=4)
+        _lbl(5, 0, "비고");        m_v = tk.StringVar()
+        m_e = make_entry(f, m_v, 40); m_e.grid(row=5, column=1, columnspan=4, padx=4, sticky='w')
+
+        def _read(widget, var, default=''):
+            try:
+                v = widget.get()
+                if v: return v.strip()
+            except Exception: pass
+            return (var.get() or default).strip()
 
         def _save():
             if not sel_id[0]:
                 messagebox.showerror("오류", "주문을 선택하세요."); return
+            t_s = _read(type_e, type_v, '최종검사')
+            d_s = _read(dt_e, dt_v)
+            s_s = _read(s_e, s_v, '0')
+            dq_s = _read(d_e, d_v, '0')
+            rr_s = _read(r_e, r_v)
+            mm_s = _read(m_e, m_v)
+            try:
+                samp = int(s_s or 0); dqty = int(dq_s or 0)
+            except:
+                messagebox.showerror("오류",
+                    f"샘플수/불량수는 정수로 입력하세요.\n샘플:'{s_s}' 불량:'{dq_s}'"); return
             self.db.execute("""
                 INSERT INTO inspections(order_id,inspect_type,inspect_date,sample_qty,result,defect_qty,defect_reason,inspector_id,memo)
                 VALUES(?,?,?,?,?,?,?,?,?)
-            """, (sel_id[0], type_v.get(), dt_v.get(),
-                  int(s_v.get() or 0), res_v.get(),
-                  int(d_v.get() or 0), r_v.get(), self.user['id'], m_v.get()))
+            """, (sel_id[0], t_s, d_s, samp, res_v.get(), dqty, rr_s, self.user['id'], mm_s))
             messagebox.showinfo("완료", f"검사 결과 [{res_v.get()}] 등록!")
             s_v.set(''); d_v.set('0'); r_v.set(''); m_v.set('')
             _load()
@@ -1768,20 +1806,36 @@ class ProductionApp:
         def _lbl(r, c, t): make_label(f, t, size=9, color=C['secondary'], bg='white').grid(row=r, column=c, sticky='w', padx=6, pady=3)
 
         _lbl(2, 0, "출하일 *"); dt_v = tk.StringVar(value=datetime.now().strftime("%Y-%m-%d"))
-        make_entry(f, dt_v, 14).grid(row=2, column=1, padx=4)
-        _lbl(2, 2, "출하수량 *"); q_v = tk.StringVar(); make_entry(f, q_v, 10).grid(row=2, column=3, padx=4)
-        _lbl(3, 0, "비고"); m_v = tk.StringVar(); make_entry(f, m_v, 40).grid(row=3, column=1, columnspan=4, padx=4, sticky='w', pady=4)
+        dt_e = make_entry(f, dt_v, 14); dt_e.grid(row=2, column=1, padx=4)
+        _lbl(2, 2, "출하수량 *"); q_v = tk.StringVar()
+        q_e = make_entry(f, q_v, 10); q_e.grid(row=2, column=3, padx=4)
+        _lbl(3, 0, "비고"); m_v = tk.StringVar()
+        m_e = make_entry(f, m_v, 40); m_e.grid(row=3, column=1, columnspan=4, padx=4, sticky='w', pady=4)
+
+        def _read(widget, var, default=''):
+            try:
+                v = widget.get()
+                if v: return v.strip()
+            except Exception: pass
+            return (var.get() or default).strip()
 
         def _save():
             if not sel[0]:
                 messagebox.showerror("오류", "주문을 선택하세요."); return
-            try: q = int(q_v.get())
-            except: messagebox.showerror("오류", "수량을 정수로 입력하세요."); return
+            q_s = _read(q_e, q_v)
+            dt_s = _read(dt_e, dt_v)
+            m_s = _read(m_e, m_v)
+            if not q_s:
+                messagebox.showerror("입력 오류",
+                    f"출하수량을 입력하세요.\n현재 값: '{q_s}'"); return
+            try: q = int(q_s)
+            except: messagebox.showerror("오류",
+                f"수량을 정수로 입력하세요. (현재: '{q_s}')"); return
             ship_no = self.db.next_ship_no()
             self.db.execute("""
                 INSERT INTO shipments(order_id,ship_no,ship_date,quantity,shipped_by,memo)
                 VALUES(?,?,?,?,?,?)
-            """, (sel[0], ship_no, dt_v.get(), q, self.user['id'], m_v.get()))
+            """, (sel[0], ship_no, dt_s, q, self.user['id'], m_s))
             self.db.execute("UPDATE orders SET status='출하완료' WHERE id=?", (sel[0],))
             messagebox.showinfo("완료", f"출하번호 [{ship_no}] 등록 완료!")
             q_v.set(''); m_v.set('')
