@@ -15,7 +15,22 @@ try:
     import matplotlib.pyplot as plt
     from matplotlib.figure import Figure
     from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
-    matplotlib.rcParams['font.family'] = 'Malgun Gothic'
+    # 한글 폰트: macOS / Windows / Linux 자동 감지
+    import platform as _plat
+    _sys = _plat.system()
+    if _sys == 'Darwin':
+        _kfonts = ['AppleGothic', 'Apple SD Gothic Neo', 'NanumGothic']
+    elif _sys == 'Windows':
+        _kfonts = ['Malgun Gothic', 'NanumGothic', 'Gulim']
+    else:
+        _kfonts = ['NanumGothic', 'UnDotum', 'DejaVu Sans']
+    # 실제 설치된 폰트 중 첫 번째 사용
+    from matplotlib import font_manager as _fm
+    _avail = {f.name for f in _fm.fontManager.ttflist}
+    for _f in _kfonts:
+        if _f in _avail:
+            matplotlib.rcParams['font.family'] = _f
+            break
     matplotlib.rcParams['axes.unicode_minus'] = False
     HAS_MPL = True
 except Exception:
