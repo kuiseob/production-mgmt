@@ -1010,12 +1010,20 @@ class ProductionApp:
 
         def _lbl(r, c, t): make_label(f, t, size=9, color=C['secondary'], bg='white').grid(row=r, column=c, sticky='w', padx=6)
 
+        # ── 주문번호 (큰 글씨로 강조 + 새 번호 버튼) ──
         order_var = tk.StringVar(value=self.db.next_order_no())
         _lbl(1, 0, "주문번호 *")
-        tk.Entry(f, textvariable=order_var, font=('Malgun Gothic', 10), width=18,
-                 state='readonly', relief='flat', bg='#EEEEEE').grid(row=1, column=1, padx=4, pady=4)
-        tk.Button(f, text="갱신", font=('Malgun Gothic', 8), bg='#78909C', fg='white', relief='flat',
-                  command=lambda: order_var.set(self.db.next_order_no())).grid(row=1, column=2)
+        on_box = tk.Frame(f, bg='white')
+        on_box.grid(row=1, column=1, padx=4, pady=4, columnspan=2, sticky='w')
+        tk.Entry(on_box, textvariable=order_var,
+                 font=('Malgun Gothic', 13, 'bold'), width=20,
+                 fg='#00695C', state='readonly', relief='flat',
+                 readonlybackground='#E0F2F1', bd=4).pack(side='left')
+        tk.Button(on_box, text="새 번호",
+                  font=('Malgun Gothic', 9, 'bold'),
+                  bg='#26A69A', fg='white', relief='flat', cursor='hand2',
+                  padx=10, pady=4,
+                  command=lambda: order_var.set(self.db.next_order_no())).pack(side='left', padx=4)
 
         _lbl(1, 3, "고객사 *")
         cus_var = tk.StringVar()
@@ -1029,13 +1037,67 @@ class ProductionApp:
         qty_var = tk.StringVar()
         make_entry(f, qty_var, 12).grid(row=2, column=5, padx=4)
 
+        # ── 날짜 입력 헬퍼 (년/월/일 Spinbox + 빠른 선택 버튼) ──
+        def _make_date_picker(parent, default_dt):
+            """년/월/일 Spinbox + 빠른 선택 버튼이 있는 날짜 위젯.
+            반환: (frame, get_func, set_func)"""
+            box = tk.Frame(parent, bg='white')
+            y_v = tk.StringVar(value=str(default_dt.year))
+            m_v = tk.StringVar(value=f"{default_dt.month:02d}")
+            d_v = tk.StringVar(value=f"{default_dt.day:02d}")
+            sp_kw = dict(font=('Malgun Gothic', 11), relief='flat', bd=2,
+                         bg='#F5F5F5', justify='center')
+            tk.Spinbox(box, from_=2020, to=2099, textvariable=y_v, width=5, **sp_kw).pack(side='left')
+            tk.Label(box, text="년", bg='white', fg='#546E7A',
+                     font=('Malgun Gothic', 9)).pack(side='left', padx=2)
+            tk.Spinbox(box, from_=1, to=12, textvariable=m_v, width=3,
+                       format='%02.0f', **sp_kw).pack(side='left')
+            tk.Label(box, text="월", bg='white', fg='#546E7A',
+                     font=('Malgun Gothic', 9)).pack(side='left', padx=2)
+            tk.Spinbox(box, from_=1, to=31, textvariable=d_v, width=3,
+                       format='%02.0f', **sp_kw).pack(side='left')
+            tk.Label(box, text="일", bg='white', fg='#546E7A',
+                     font=('Malgun Gothic', 9)).pack(side='left', padx=2)
+            def _get():
+                try:
+                    return f"{int(y_v.get()):04d}-{int(m_v.get()):02d}-{int(d_v.get()):02d}"
+                except: return ''
+            def _set(dt):
+                y_v.set(str(dt.year))
+                m_v.set(f"{dt.month:02d}")
+                d_v.set(f"{dt.day:02d}")
+            return box, _get, _set
+
         _lbl(3, 0, "수주일 *")
-        odate_var = tk.StringVar(value=datetime.now().strftime("%Y-%m-%d"))
-        make_entry(f, odate_var, 14).grid(row=3, column=1, padx=4, pady=4)
+        now = datetime.now()
+        odate_box, _odate_get, _odate_set = _make_date_picker(f, now)
+        odate_box.grid(row=3, column=1, padx=4, pady=6, columnspan=2, sticky='w')
+        # 빠른 버튼: 오늘
+        tk.Button(f, text="오늘", font=('Malgun Gothic', 9, 'bold'),
+                  bg='#42A5F5', fg='white', relief='flat', cursor='hand2',
+                  padx=10, pady=2,
+                  command=lambda: _odate_set(datetime.now())).grid(row=3, column=2, sticky='w')
 
         _lbl(3, 3, "납기일 *")
-        ddate_var = tk.StringVar(value=(datetime.now() + timedelta(days=14)).strftime("%Y-%m-%d"))
-        make_entry(f, ddate_var, 14).grid(row=3, column=4, padx=4)
+        ddate_box, _ddate_get, _ddate_set = _make_date_picker(f, now + timedelta(days=14))
+        ddate_box.grid(row=3, column=4, padx=4, pady=6, columnspan=2, sticky='w')
+        # 빠른 버튼: +7일 / +14일 / +30일
+        qbox = tk.Frame(f, bg='white'); qbox.grid(row=3, column=6, sticky='w', padx=4)
+        for days, color in [(7, '#66BB6A'), (14, '#FFA726'), (30, '#EF5350')]:
+            tk.Button(qbox, text=f"+{days}일",
+                      font=('Malgun Gothic', 9, 'bold'),
+                      bg=color, fg='white', relief='flat', cursor='hand2',
+                      padx=6, pady=2,
+                      command=lambda d=days: _ddate_set(datetime.now() + timedelta(days=d))
+                      ).pack(side='left', padx=1)
+
+        # 호환용 StringVar (저장/로드 코드 변경 최소화)
+        odate_var = tk.StringVar(value=now.strftime('%Y-%m-%d'))
+        ddate_var = tk.StringVar(value=(now + timedelta(days=14)).strftime('%Y-%m-%d'))
+        # 저장 직전 동기화 함수
+        def _sync_dates():
+            odate_var.set(_odate_get())
+            ddate_var.set(_ddate_get())
 
         _lbl(4, 0, "비고")
         memo_var = tk.StringVar()
@@ -1052,11 +1114,14 @@ class ProductionApp:
             edit_id[0] = None
             order_var.set(self.db.next_order_no())
             for v in [cus_var, item_var, qty_var, memo_var]: v.set('')
-            odate_var.set(datetime.now().strftime("%Y-%m-%d"))
-            ddate_var.set((datetime.now() + timedelta(days=14)).strftime("%Y-%m-%d"))
+            now2 = datetime.now()
+            _odate_set(now2)
+            _ddate_set(now2 + timedelta(days=14))
+            _sync_dates()
             mode_lbl.config(text="👉 새 수주 입력 중", fg='#2E7D32', bg='#E8F5E9')
 
         def _save_new():
+            _sync_dates()
             if edit_id[0] is not None:
                 if not messagebox.askyesno("확인", "현재 수정 모드입니다.\n신규 등록으로 전환할까요?"):
                     return
@@ -1082,6 +1147,7 @@ class ProductionApp:
             _load()
 
         def _update():
+            _sync_dates()
             if edit_id[0] is None:
                 messagebox.showwarning("수정", "수정할 수주를 목록에서 선택하세요."); return
             if not all([cus_var.get(), item_var.get(), qty_var.get(), odate_var.get(), ddate_var.get()]):
@@ -1185,6 +1251,16 @@ class ProductionApp:
             qty_var.set(str(r[4] or ''))
             odate_var.set(r[5] or '')
             ddate_var.set(r[6] or '')
+            # Spinbox 날짜 위젯에도 반영
+            try:
+                if r[5]:
+                    od = datetime.strptime(str(r[5])[:10], '%Y-%m-%d')
+                    _odate_set(od)
+                if r[6]:
+                    dd = datetime.strptime(str(r[6])[:10], '%Y-%m-%d')
+                    _ddate_set(dd)
+            except Exception:
+                pass
             memo_var.set(r[7] or '')
             mode_lbl.config(text=f"✏ 기존 수주 [{r[1]}] 수정 중",
                             fg='#E65100', bg='#FFF3E0')
