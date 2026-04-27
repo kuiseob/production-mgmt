@@ -1445,19 +1445,45 @@ class ProductionApp:
         _lbl(2, 2, "담당자")
         worker_var = tk.StringVar()
         worker_names = [w[1] for w in workers]
-        make_combo(af, worker_var, worker_names, width=14).grid(row=2, column=3, padx=4)
+        worker_combo = make_combo(af, worker_var, worker_names, width=14)
+        worker_combo.grid(row=2, column=3, padx=4)
+
+        # ── WO 수정용 입력 (공정 / 계획수량) ──
+        _lbl(3, 0, "공정 변경")
+        proc_var = tk.StringVar()
+        proc_combo = make_combo(af, proc_var, PROCESSES, width=14)
+        proc_combo.grid(row=3, column=1, padx=4, pady=4)
+
+        _lbl(3, 2, "계획수량")
+        plan_var = tk.StringVar()
+        plan_entry = make_entry(af, plan_var, 12)
+        plan_entry.grid(row=3, column=3, padx=4)
+
+        # 행 선택 시 공정/계획수량도 폼에 채우기
+        def _on_sel2(e=None):
+            s = tree.selection()
+            if not s: return
+            v = tree.item(s[0])['values']
+            # v[4]=공정, v[5]=계획수량
+            try:
+                proc_var.set(v[4] or '')
+                plan_var.set(str(v[5] or ''))
+            except Exception: pass
+        tree.bind('<<TreeviewSelect>>', _on_sel2, add='+')
 
         def _assign():
             if not sel_id[0]:
                 messagebox.showerror("오류", "작업을 선택하세요."); return
             eq_id = None
-            if eq_var.get():
-                code = eq_var.get().split(' - ')[0]
+            ev = (equip_combo.get() or eq_var.get() or '').strip()
+            if ev:
+                code = ev.split(' - ')[0]
                 row = self.db.query("SELECT id FROM equipments WHERE code=?", (code,))
                 if row: eq_id = row[0][0]
             wid = None
-            if worker_var.get():
-                row = self.db.query("SELECT id FROM users WHERE name=?", (worker_var.get(),))
+            wv = (worker_combo.get() or worker_var.get() or '').strip()
+            if wv:
+                row = self.db.query("SELECT id FROM users WHERE name=?", (wv,))
                 if row: wid = row[0][0]
             self.db.execute("UPDATE work_orders SET equipment_id=?, worker_id=? WHERE id=?",
                             (eq_id, wid, sel_id[0]))
@@ -1480,12 +1506,52 @@ class ProductionApp:
             messagebox.showinfo("완료", "작업 완료 처리!")
             _load()
 
-        # 3개 버튼을 한 줄에 우측 정렬 (배정 저장 / 작업 시작 / 작업 완료)
+        def _wo_modify():
+            """WO의 공정/계획수량 수정."""
+            if not sel_id[0]:
+                messagebox.showerror("오류", "수정할 작업을 선택하세요."); return
+            new_proc = (proc_combo.get() or proc_var.get() or '').strip()
+            new_plan = (plan_entry.get() or plan_var.get() or '').strip()
+            if not new_proc or not new_plan:
+                messagebox.showerror("오류", "공정과 계획수량을 입력하세요."); return
+            try: q = int(new_plan)
+            except: messagebox.showerror("오류", "계획수량은 정수로 입력하세요."); return
+            if not messagebox.askyesno("확인",
+                f"작업지시 정보를 수정하시겠습니까?\n\n"
+                f"  · 공정: {new_proc}\n"
+                f"  · 계획수량: {q}"):
+                return
+            self.db.execute("UPDATE work_orders SET process=?, plan_qty=? WHERE id=?",
+                            (new_proc, q, sel_id[0]))
+            messagebox.showinfo("완료", "작업지시 수정 완료!")
+            _load()
+
+        def _wo_delete():
+            """WO 및 연관 생산실적 삭제."""
+            if not sel_id[0]:
+                messagebox.showerror("오류", "삭제할 작업을 선택하세요."); return
+            pr_cnt = self.db.query("SELECT COUNT(*) FROM production_records WHERE wo_id=?", (sel_id[0],))[0][0]
+            warn = ""
+            if pr_cnt:
+                warn = f"\n\n⚠ 연관 생산실적 {pr_cnt}건도 함께 삭제됩니다."
+            if not messagebox.askyesno("삭제 확인",
+                f"이 작업지시를 삭제하시겠습니까?{warn}\n이 작업은 되돌릴 수 없습니다."):
+                return
+            self.db.execute("DELETE FROM production_records WHERE wo_id=?", (sel_id[0],))
+            self.db.execute("DELETE FROM work_orders WHERE id=?", (sel_id[0],))
+            messagebox.showinfo("삭제 완료", "작업지시가 삭제되었습니다.")
+            sel_id[0] = None
+            sel_var.set("작업을 선택하세요")
+            _load()
+
+        # 5개 버튼: 배정 저장 / 작업 시작 / 작업 완료 / WO 수정 / WO 삭제
         bf = tk.Frame(af, bg='white')
-        bf.grid(row=3, column=0, columnspan=6, pady=(14, 4), sticky='e', padx=4)
-        color_btn(bf, "배정 저장", _assign, theme='save').pack(side='left', padx=5)
-        color_btn(bf, "작업 시작", _start, theme='action').pack(side='left', padx=5)
-        color_btn(bf, "작업 완료", _complete, theme='update').pack(side='left', padx=5)
+        bf.grid(row=4, column=0, columnspan=6, pady=(14, 4), sticky='e', padx=4)
+        color_btn(bf, "배정 저장", _assign, theme='save').pack(side='left', padx=4)
+        color_btn(bf, "작업 시작", _start, theme='action').pack(side='left', padx=4)
+        color_btn(bf, "작업 완료", _complete, theme='update').pack(side='left', padx=4)
+        color_btn(bf, "WO 수정", _wo_modify, theme='update').pack(side='left', padx=4)
+        color_btn(bf, "WO 삭제", _wo_delete, theme='delete').pack(side='left', padx=4)
 
     # ========================================================
     # 생산실적
