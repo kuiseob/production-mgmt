@@ -1015,10 +1015,10 @@ class ProductionApp:
         _lbl(1, 0, "주문번호 *")
         on_box = tk.Frame(f, bg='white')
         on_box.grid(row=1, column=1, padx=4, pady=4, columnspan=2, sticky='w')
-        tk.Entry(on_box, textvariable=order_var,
-                 font=('Malgun Gothic', 13, 'bold'), width=20,
-                 fg='#00695C', state='readonly', relief='flat',
-                 readonlybackground='#E0F2F1', bd=4).pack(side='left')
+        on_entry = tk.Entry(on_box, textvariable=order_var,
+                            font=('Malgun Gothic', 13, 'bold'), width=20,
+                            fg='#00695C', bg='#E0F2F1', relief='flat', bd=4)
+        on_entry.pack(side='left')
         tk.Button(on_box, text="새 번호",
                   font=('Malgun Gothic', 9, 'bold'),
                   bg='#26A69A', fg='white', relief='flat', cursor='hand2',
@@ -1037,67 +1037,64 @@ class ProductionApp:
         qty_var = tk.StringVar()
         make_entry(f, qty_var, 12).grid(row=2, column=5, padx=4)
 
-        # ── 날짜 입력 헬퍼 (년/월/일 Spinbox + 빠른 선택 버튼) ──
-        def _make_date_picker(parent, default_dt):
-            """년/월/일 Spinbox + 빠른 선택 버튼이 있는 날짜 위젯.
-            반환: (frame, get_func, set_func)"""
-            box = tk.Frame(parent, bg='white')
-            y_v = tk.StringVar(value=str(default_dt.year))
-            m_v = tk.StringVar(value=f"{default_dt.month:02d}")
-            d_v = tk.StringVar(value=f"{default_dt.day:02d}")
-            sp_kw = dict(font=('Malgun Gothic', 11), relief='flat', bd=2,
-                         bg='#F5F5F5', justify='center')
-            tk.Spinbox(box, from_=2020, to=2099, textvariable=y_v, width=5, **sp_kw).pack(side='left')
-            tk.Label(box, text="년", bg='white', fg='#546E7A',
-                     font=('Malgun Gothic', 9)).pack(side='left', padx=2)
-            tk.Spinbox(box, from_=1, to=12, textvariable=m_v, width=3,
-                       format='%02.0f', **sp_kw).pack(side='left')
-            tk.Label(box, text="월", bg='white', fg='#546E7A',
-                     font=('Malgun Gothic', 9)).pack(side='left', padx=2)
-            tk.Spinbox(box, from_=1, to=31, textvariable=d_v, width=3,
-                       format='%02.0f', **sp_kw).pack(side='left')
-            tk.Label(box, text="일", bg='white', fg='#546E7A',
-                     font=('Malgun Gothic', 9)).pack(side='left', padx=2)
-            def _get():
-                try:
-                    return f"{int(y_v.get()):04d}-{int(m_v.get()):02d}-{int(d_v.get()):02d}"
-                except: return ''
-            def _set(dt):
-                y_v.set(str(dt.year))
-                m_v.set(f"{dt.month:02d}")
-                d_v.set(f"{dt.day:02d}")
-            return box, _get, _set
+        # ── 날짜 입력 (단일 Entry "YYYY-MM-DD" + 자동 포맷 + 빠른 버튼) ──
+        now = datetime.now()
+
+        def _normalize(s):
+            """20260428 / 2026.04.28 / 2026/04/28 → 2026-04-28 자동 변환."""
+            s = (s or '').strip().replace('.', '-').replace('/', '-').replace(' ', '')
+            digits = ''.join(c for c in s if c.isdigit())
+            if len(digits) == 8:
+                return f"{digits[:4]}-{digits[4:6]}-{digits[6:8]}"
+            return s
+
+        def _make_date_box(parent, default_dt):
+            """단일 Entry 날짜 입력 (포커스 잃을 때 자동 정규화)."""
+            v = tk.StringVar(value=default_dt.strftime('%Y-%m-%d'))
+            ent = tk.Entry(parent, textvariable=v,
+                           font=('Malgun Gothic', 12, 'bold'),
+                           width=12, justify='center',
+                           bg='#F5F5F5', fg='#263238',
+                           relief='flat', bd=4)
+            def _on_focus_out(e=None):
+                v.set(_normalize(v.get()))
+            ent.bind('<FocusOut>', _on_focus_out)
+            ent.bind('<Return>', _on_focus_out)
+            return ent, v
 
         _lbl(3, 0, "수주일 *")
-        now = datetime.now()
-        odate_box, _odate_get, _odate_set = _make_date_picker(f, now)
-        odate_box.grid(row=3, column=1, padx=4, pady=6, columnspan=2, sticky='w')
+        odate_ent, odate_var = _make_date_box(f, now)
+        odate_ent.grid(row=3, column=1, padx=4, pady=6, sticky='w')
         # 빠른 버튼: 오늘
         tk.Button(f, text="오늘", font=('Malgun Gothic', 9, 'bold'),
                   bg='#42A5F5', fg='white', relief='flat', cursor='hand2',
-                  padx=10, pady=2,
-                  command=lambda: _odate_set(datetime.now())).grid(row=3, column=2, sticky='w')
+                  padx=12, pady=4,
+                  command=lambda: odate_var.set(datetime.now().strftime('%Y-%m-%d'))
+                  ).grid(row=3, column=2, padx=4, sticky='w')
 
         _lbl(3, 3, "납기일 *")
-        ddate_box, _ddate_get, _ddate_set = _make_date_picker(f, now + timedelta(days=14))
-        ddate_box.grid(row=3, column=4, padx=4, pady=6, columnspan=2, sticky='w')
+        ddate_ent, ddate_var = _make_date_box(f, now + timedelta(days=14))
+        ddate_ent.grid(row=3, column=4, padx=4, pady=6, sticky='w')
         # 빠른 버튼: +7일 / +14일 / +30일
-        qbox = tk.Frame(f, bg='white'); qbox.grid(row=3, column=6, sticky='w', padx=4)
+        qbox = tk.Frame(f, bg='white')
+        qbox.grid(row=3, column=5, padx=4, columnspan=2, sticky='w')
         for days, color in [(7, '#66BB6A'), (14, '#FFA726'), (30, '#EF5350')]:
             tk.Button(qbox, text=f"+{days}일",
                       font=('Malgun Gothic', 9, 'bold'),
                       bg=color, fg='white', relief='flat', cursor='hand2',
-                      padx=6, pady=2,
-                      command=lambda d=days: _ddate_set(datetime.now() + timedelta(days=d))
-                      ).pack(side='left', padx=1)
+                      padx=8, pady=4,
+                      command=lambda d=days: ddate_var.set(
+                          (datetime.now() + timedelta(days=d)).strftime('%Y-%m-%d'))
+                      ).pack(side='left', padx=2)
 
-        # 호환용 StringVar (저장/로드 코드 변경 최소화)
-        odate_var = tk.StringVar(value=now.strftime('%Y-%m-%d'))
-        ddate_var = tk.StringVar(value=(now + timedelta(days=14)).strftime('%Y-%m-%d'))
-        # 저장 직전 동기화 함수
         def _sync_dates():
-            odate_var.set(_odate_get())
-            ddate_var.set(_ddate_get())
+            """저장 직전 호출 — 자동 정규화."""
+            odate_var.set(_normalize(odate_var.get()))
+            ddate_var.set(_normalize(ddate_var.get()))
+
+        # _odate_set / _ddate_set 호환 함수 (행 클릭 시 사용)
+        def _odate_set(dt): odate_var.set(dt.strftime('%Y-%m-%d'))
+        def _ddate_set(dt): ddate_var.set(dt.strftime('%Y-%m-%d'))
 
         _lbl(4, 0, "비고")
         memo_var = tk.StringVar()
