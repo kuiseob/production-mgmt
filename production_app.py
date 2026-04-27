@@ -1099,22 +1099,68 @@ class ProductionApp:
                     return
                 _clear_form()
                 return
-            if not all([order_var.get(), cus_var.get(), item_var.get(), qty_var.get(), odate_var.get(), ddate_var.get()]):
-                messagebox.showerror("오류", "필수 항목(*)을 모두 입력하세요."); return
-            try: q = int(qty_var.get())
-            except: messagebox.showerror("오류", "수량은 정수로 입력하세요."); return
+            ono   = (order_var.get() or '').strip()
+            cname = (cus_var.get() or '').strip()
+            iname = (item_var.get() or '').strip()
+            qty_s = (qty_var.get() or '').strip()
+            od    = (odate_var.get() or '').strip()
+            dd    = (ddate_var.get() or '').strip()
+
+            if not ono or not cname or not iname or not qty_s or not od or not dd:
+                messagebox.showerror("입력 오류",
+                    "필수 항목(*)을 모두 입력하세요.\n\n"
+                    f"  · 주문번호 = '{ono}'\n"
+                    f"  · 고객사 = '{cname}'\n"
+                    f"  · 생산품명 = '{iname}'\n"
+                    f"  · 수량 = '{qty_s}'\n"
+                    f"  · 수주일 = '{od}'\n"
+                    f"  · 납기일 = '{dd}'")
+                return
+            try: q = int(qty_s)
+            except: messagebox.showerror("오류", f"수량은 정수로 입력하세요. (현재: '{qty_s}')"); return
+
             # 중복 주문번호 방지
-            dup = self.db.query("SELECT id FROM orders WHERE order_no=?", (order_var.get(),))
+            dup = self.db.query("SELECT id FROM orders WHERE order_no=?", (ono,))
             if dup:
-                messagebox.showerror("오류", f"이미 존재하는 주문번호입니다: {order_var.get()}\n'갱신' 버튼으로 새 번호를 받으세요."); return
-            cus_id  = customers[cus_names.index(cus_var.get())][0]
-            item_id = items[item_disp.index(item_var.get())][0]
-            self.db.execute("""
-                INSERT INTO orders(order_no,customer_id,item_id,quantity,order_date,due_date,memo,created_by)
-                VALUES(?,?,?,?,?,?,?,?)
-            """, (order_var.get(), cus_id, item_id, q, odate_var.get(), ddate_var.get(),
-                  memo_var.get(), self.user['id']))
-            messagebox.showinfo("완료", f"수주 [{order_var.get()}] 등록 완료!")
+                messagebox.showerror("오류", f"이미 존재하는 주문번호입니다: {ono}\n새 번호를 입력하세요."); return
+
+            # 고객사/품목 매칭 — 드롭다운에 없는 값이면 직접 검색
+            cus_id = None
+            if cname in cus_names:
+                cus_id = customers[cus_names.index(cname)][0]
+            else:
+                row = self.db.query("SELECT id FROM customers WHERE name=? AND active=1", (cname,))
+                if row: cus_id = row[0][0]
+            if cus_id is None:
+                messagebox.showerror("고객사 오류",
+                    f"'{cname}' 고객사를 찾을 수 없습니다.\n\n"
+                    "고객사 관리 메뉴에서 먼저 등록하세요.\n"
+                    f"등록된 고객사: {', '.join(cus_names) if cus_names else '(없음)'}")
+                return
+
+            item_id = None
+            if iname in item_disp:
+                item_id = items[item_disp.index(iname)][0]
+            else:
+                row = self.db.query("SELECT id FROM items WHERE name=? AND active=1", (iname,))
+                if row: item_id = row[0][0]
+            if item_id is None:
+                messagebox.showerror("품목 오류",
+                    f"'{iname}' 품목을 찾을 수 없습니다.\n\n"
+                    "품목 관리 메뉴에서 먼저 등록하세요.\n"
+                    f"등록된 품목: {', '.join(item_disp[:8]) if item_disp else '(없음)'}{' ...' if len(item_disp)>8 else ''}")
+                return
+
+            try:
+                self.db.execute("""
+                    INSERT INTO orders(order_no,customer_id,item_id,quantity,order_date,due_date,memo,created_by)
+                    VALUES(?,?,?,?,?,?,?,?)
+                """, (ono, cus_id, item_id, q, od, dd,
+                      memo_var.get(), self.user['id']))
+            except Exception as e:
+                messagebox.showerror("DB 저장 실패", f"오류: {e}\n\n주문번호: {ono}")
+                return
+            messagebox.showinfo("등록 완료", f"수주 [{ono}] 등록 완료!")
             _clear_form()
             _load()
 
