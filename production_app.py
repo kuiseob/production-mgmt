@@ -1986,14 +1986,27 @@ class ProductionApp:
         open_print_preview(content, "생산일보")
 
     def _rpt_invoice(self):
-        rows = self.db.query("""
-            SELECT sh.ship_no, sh.ship_date, c.name, i.name, sh.quantity, o.order_no
-            FROM shipments sh
-            LEFT JOIN orders o ON sh.order_id=o.id
-            LEFT JOIN customers c ON o.customer_id=c.id
-            LEFT JOIN items i ON o.item_id=i.id
-            ORDER BY sh.ship_date DESC LIMIT 10
-        """)
+        try:
+            rows = self.db.query("""
+                SELECT COALESCE(sh.ship_no,''), COALESCE(sh.ship_date,''),
+                       COALESCE(c.name,'-'), COALESCE(i.name,'-'),
+                       COALESCE(sh.quantity,0), COALESCE(o.order_no,'-'),
+                       COALESCE(sh.memo,'')
+                FROM shipments sh
+                LEFT JOIN orders o ON sh.order_id=o.id
+                LEFT JOIN customers c ON o.customer_id=c.id
+                LEFT JOIN items i ON o.item_id=i.id
+                ORDER BY sh.ship_date DESC, sh.id DESC LIMIT 20
+            """)
+        except Exception as e:
+            messagebox.showerror("쿼리 오류", str(e)); return
+
+        if not rows:
+            content = "출하 기록이 없습니다.\n\n출하 관리 메뉴에서 먼저 출하를 등록하세요."
+            self._set_preview(content)
+            open_print_preview(content, "거래명세서")
+            return
+
         W = 56
         parts = []
         for r in rows:
@@ -2002,18 +2015,19 @@ class ProductionApp:
                 f"|{COMPANY:^{W}}|",
                 f"|{'거 래 명 세 서':^{W}}|",
                 f"+{'-' * W}+",
-                f"| 출하번호: {r[0]:<{W-12}}|",
-                f"| 출하일자: {r[1]:<{W-12}}|",
-                f"| 거 래 처: {r[2]:<{W-12}}|",
-                f"| 주문번호: {r[6]:<{W-12}}|",
+                f"| 출하번호: {str(r[0]):<{W-12}}|",
+                f"| 출하일자: {str(r[1]):<{W-12}}|",
+                f"| 거 래 처: {str(r[2]):<{W-12}}|",
+                f"| 주문번호: {str(r[5]):<{W-12}}|",
                 f"+{'-' * W}+",
-                f"| 생산품명: {r[3]:<{W-12}}|",
-                f"| 수  량: {r[4]:<{W-10}}|",
+                f"| 생산품명: {str(r[3]):<{W-12}}|",
+                f"| 수    량: {str(r[4]):<{W-12}}|",
+                f"| 비    고: {str(r[6])[:W-12]:<{W-12}}|",
                 f"+{'-' * W}+",
-                f"| 인수자 확인: ___________________ (인) {' ':<{W-42}}|",
+                f"| 인수자 확인: ___________________ (인){' ':<{W-40}}|",
                 f"+{'=' * W}+",
             ]))
-        content = '\n\n'.join(parts) if parts else "출하 기록 없음"
+        content = '\n\n'.join(parts)
         self._set_preview(content)
         open_print_preview(content, "거래명세서")
 
