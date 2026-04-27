@@ -1417,15 +1417,17 @@ class ProductionApp:
         sel_var = tk.StringVar(value="작업을 선택하세요")
         sel_id  = [None]; sel_proc = [None]
 
+        # 모든 설비 목록 (일반CNC + 복합CNC 통합, 공정 표시 포함)
+        all_eq_codes = [f"{r[1]} - {r[2]} ({r[3]})" for r in equipments]
+
         def _on_sel(e):
             s = tree.selection()
             if not s: return
             v = tree.item(s[0])['values']
             sel_id[0] = v[0]; sel_proc[0] = v[4]
             sel_var.set(f"  {v[1]}  ({v[3]} / {v[4]} / 계획 {v[5]})")
-            # 설비 콤보 갱신 (공정 일치만)
-            eq_codes = [f"{r[1]} - {r[2]}" for r in equipments if r[3] == v[4]]
-            equip_combo['values'] = eq_codes
+            # 설비 콤보: 모든 설비 표시 (사용자가 자유 선택)
+            equip_combo['values'] = all_eq_codes
 
         tree.bind('<<TreeviewSelect>>', _on_sel)
 
@@ -1448,25 +1450,19 @@ class ProductionApp:
         worker_combo = make_combo(af, worker_var, worker_names, width=14)
         worker_combo.grid(row=2, column=3, padx=4)
 
-        # ── WO 수정용 입력 (공정 / 계획수량) ──
-        _lbl(3, 0, "공정 변경")
-        proc_var = tk.StringVar()
-        proc_combo = make_combo(af, proc_var, PROCESSES, width=14)
-        proc_combo.grid(row=3, column=1, padx=4, pady=4)
-
-        _lbl(3, 2, "계획수량")
+        # ── 계획수량 수정 ──
+        _lbl(3, 0, "계획수량")
         plan_var = tk.StringVar()
         plan_entry = make_entry(af, plan_var, 12)
-        plan_entry.grid(row=3, column=3, padx=4)
+        plan_entry.grid(row=3, column=1, padx=4, pady=4)
 
-        # 행 선택 시 공정/계획수량도 폼에 채우기
+        # 행 선택 시 계획수량도 폼에 채우기
         def _on_sel2(e=None):
             s = tree.selection()
             if not s: return
             v = tree.item(s[0])['values']
-            # v[4]=공정, v[5]=계획수량
+            # v[5]=계획수량
             try:
-                proc_var.set(v[4] or '')
                 plan_var.set(str(v[5] or ''))
             except Exception: pass
         tree.bind('<<TreeviewSelect>>', _on_sel2, add='+')
@@ -1507,22 +1503,19 @@ class ProductionApp:
             _load()
 
         def _wo_modify():
-            """WO의 공정/계획수량 수정."""
+            """WO의 계획수량 수정."""
             if not sel_id[0]:
                 messagebox.showerror("오류", "수정할 작업을 선택하세요."); return
-            new_proc = (proc_combo.get() or proc_var.get() or '').strip()
             new_plan = (plan_entry.get() or plan_var.get() or '').strip()
-            if not new_proc or not new_plan:
-                messagebox.showerror("오류", "공정과 계획수량을 입력하세요."); return
+            if not new_plan:
+                messagebox.showerror("오류", "계획수량을 입력하세요."); return
             try: q = int(new_plan)
             except: messagebox.showerror("오류", "계획수량은 정수로 입력하세요."); return
             if not messagebox.askyesno("확인",
-                f"작업지시 정보를 수정하시겠습니까?\n\n"
-                f"  · 공정: {new_proc}\n"
-                f"  · 계획수량: {q}"):
+                f"계획수량을 {q}(으)로 수정하시겠습니까?"):
                 return
-            self.db.execute("UPDATE work_orders SET process=?, plan_qty=? WHERE id=?",
-                            (new_proc, q, sel_id[0]))
+            self.db.execute("UPDATE work_orders SET plan_qty=? WHERE id=?",
+                            (q, sel_id[0]))
             messagebox.showinfo("완료", "작업지시 수정 완료!")
             _load()
 
