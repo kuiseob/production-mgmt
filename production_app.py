@@ -2344,9 +2344,9 @@ class ProductionApp:
         current_data = {'rows': [], 'cols': cols, 'meta': {}}
 
         def _period_format(p):
-            if period_var.get() == '일별':   return "strftime('%Y-%m-%d', {0})".format(p)
-            if period_var.get() == '월별':   return "strftime('%Y-%m', {0})".format(p)
-            return "strftime('%Y', {0})"
+            if period_var.get() == '일별':   return f"strftime('%Y-%m-%d', {p})"
+            if period_var.get() == '월별':   return f"strftime('%Y-%m', {p})"
+            return f"strftime('%Y', {p})"
 
         def _query():
             cols = cols_set[kind_var.get()]
