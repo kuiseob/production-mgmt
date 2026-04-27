@@ -1010,20 +1010,13 @@ class ProductionApp:
 
         def _lbl(r, c, t): make_label(f, t, size=9, color=C['secondary'], bg='white').grid(row=r, column=c, sticky='w', padx=6)
 
-        # ── 주문번호 (큰 글씨로 강조 + 새 번호 버튼) ──
+        # ── 주문번호 (큰 글씨, 자동 채번) ──
         order_var = tk.StringVar(value=self.db.next_order_no())
         _lbl(1, 0, "주문번호 *")
-        on_box = tk.Frame(f, bg='white')
-        on_box.grid(row=1, column=1, padx=4, pady=4, columnspan=2, sticky='w')
-        on_entry = tk.Entry(on_box, textvariable=order_var,
-                            font=('Malgun Gothic', 13, 'bold'), width=20,
+        on_entry = tk.Entry(f, textvariable=order_var,
+                            font=('Malgun Gothic', 13, 'bold'), width=22,
                             fg='#00695C', bg='#E0F2F1', relief='flat', bd=4)
-        on_entry.pack(side='left')
-        tk.Button(on_box, text="새 번호",
-                  font=('Malgun Gothic', 9, 'bold'),
-                  bg='#26A69A', fg='white', relief='flat', cursor='hand2',
-                  padx=10, pady=4,
-                  command=lambda: order_var.set(self.db.next_order_no())).pack(side='left', padx=4)
+        on_entry.grid(row=1, column=1, padx=4, pady=4, columnspan=2, sticky='w')
 
         _lbl(1, 3, "고객사 *")
         cus_var = tk.StringVar()
@@ -1064,28 +1057,11 @@ class ProductionApp:
 
         _lbl(3, 0, "수주일 *")
         odate_ent, odate_var = _make_date_box(f, now)
-        odate_ent.grid(row=3, column=1, padx=4, pady=6, sticky='w')
-        # 빠른 버튼: 오늘
-        tk.Button(f, text="오늘", font=('Malgun Gothic', 9, 'bold'),
-                  bg='#42A5F5', fg='white', relief='flat', cursor='hand2',
-                  padx=12, pady=4,
-                  command=lambda: odate_var.set(datetime.now().strftime('%Y-%m-%d'))
-                  ).grid(row=3, column=2, padx=4, sticky='w')
+        odate_ent.grid(row=3, column=1, padx=4, pady=6, columnspan=2, sticky='w')
 
         _lbl(3, 3, "납기일 *")
         ddate_ent, ddate_var = _make_date_box(f, now + timedelta(days=14))
-        ddate_ent.grid(row=3, column=4, padx=4, pady=6, sticky='w')
-        # 빠른 버튼: +7일 / +14일 / +30일
-        qbox = tk.Frame(f, bg='white')
-        qbox.grid(row=3, column=5, padx=4, columnspan=2, sticky='w')
-        for days, color in [(7, '#66BB6A'), (14, '#FFA726'), (30, '#EF5350')]:
-            tk.Button(qbox, text=f"+{days}일",
-                      font=('Malgun Gothic', 9, 'bold'),
-                      bg=color, fg='white', relief='flat', cursor='hand2',
-                      padx=8, pady=4,
-                      command=lambda d=days: ddate_var.set(
-                          (datetime.now() + timedelta(days=d)).strftime('%Y-%m-%d'))
-                      ).pack(side='left', padx=2)
+        ddate_ent.grid(row=3, column=4, padx=4, pady=6, columnspan=2, sticky='w')
 
         def _sync_dates():
             """저장 직전 호출 — 자동 정규화."""
@@ -1100,12 +1076,11 @@ class ProductionApp:
         memo_var = tk.StringVar()
         make_entry(f, memo_var, 50).grid(row=4, column=1, columnspan=5, padx=4, sticky='w', pady=4)
 
-        # 편집 상태 표시: None=신규 입력, 정수=기존 수주 수정
+        # 편집 상태 추적용 (UI 라벨 없음)
         edit_id = [None]
-        mode_lbl = tk.Label(f, text="👉 새 수주 입력 중",
-                            font=('Malgun Gothic', 11, 'bold'),
-                            bg='#E8F5E9', fg='#2E7D32', padx=10, pady=4)
-        mode_lbl.grid(row=0, column=6, columnspan=2, sticky='e', padx=8)
+        class _NoLbl:
+            def config(self, **kw): pass
+        mode_lbl = _NoLbl()
 
         def _clear_form():
             edit_id[0] = None
