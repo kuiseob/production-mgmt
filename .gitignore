@@ -6,3 +6,4 @@ dist/
 *.spec
 production.ico
 .DS_Store
+.venv/
