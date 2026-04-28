@@ -901,6 +901,7 @@ class ProductionApp:
             None,
             ('report',     '보고서 / 출력','#FFCA28', '📈'),
             ('statistics', '통계 (일/월/년)','#7E57C2', '📊'),
+            ('history',    '일자별 이력',   '#00838F', '📆'),
             None,
         ]
         if self.user['role'] == 'admin':
@@ -975,6 +976,7 @@ class ProductionApp:
             'shipment':   self._pg_shipment,
             'report':     self._pg_report,
             'statistics': self._pg_statistics,
+            'history':    self._pg_history,
             'items':      self._pg_items,
             'customers':  self._pg_customers,
             'equipments': self._pg_equipments,
@@ -2950,6 +2952,258 @@ class ProductionApp:
         # 초기 활성 탭 표시 (일별)
         tab_btns['일별'].config(bg=C['primary'], fg='white')
         _query()
+
+    # ========================================================
+    # 일자별 이력 (전 메뉴 입력 데이터를 등록일로 조회)
+    # ========================================================
+    def _pg_history(self):
+        p = self.page_area
+        page_header(p, "일자별 이력",
+                    "  프로그램에 입력한 모든 데이터를 등록 날짜별로 조회 / 저장")
+
+        # ── 컨트롤 바 (날짜 선택 + 종류 + 조회) ──
+        ctrl = tk.Frame(p, bg='white', padx=14, pady=12)
+        ctrl.pack(fill='x', padx=20, pady=(8, 4))
+
+        now = datetime.now()
+        tk.Label(ctrl, text="시작:", font=('Malgun Gothic', 10),
+                 bg='white').pack(side='left', padx=(4, 4))
+        from_var = tk.StringVar(value=(now - timedelta(days=7)).strftime('%Y-%m-%d'))
+        from_e = tk.Entry(ctrl, textvariable=from_var, width=12,
+                          font=('Malgun Gothic', 11), justify='center')
+        from_e.pack(side='left', padx=2)
+
+        tk.Label(ctrl, text="종료:", font=('Malgun Gothic', 10),
+                 bg='white').pack(side='left', padx=(10, 4))
+        to_var = tk.StringVar(value=now.strftime('%Y-%m-%d'))
+        to_e = tk.Entry(ctrl, textvariable=to_var, width=12,
+                        font=('Malgun Gothic', 11), justify='center')
+        to_e.pack(side='left', padx=2)
+
+        tk.Label(ctrl, text="종류:", font=('Malgun Gothic', 10),
+                 bg='white').pack(side='left', padx=(16, 4))
+        kind_var = tk.StringVar(value='전체')
+        kinds = ['전체', '수주', '작업지시', '생산실적', '품질검사', '출하',
+                 '품목', '고객사', '설비']
+        kind_combo = ttk.Combobox(ctrl, textvariable=kind_var, values=kinds,
+                                  state='readonly', width=12,
+                                  font=('Malgun Gothic', 11))
+        kind_combo.pack(side='left', padx=2)
+
+        # 빠른 기간 버튼
+        def _quick(days):
+            from_var.set((datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d'))
+            to_var.set(datetime.now().strftime('%Y-%m-%d'))
+            _query()
+        for label, days in [('오늘', 0), ('7일', 7), ('30일', 30), ('90일', 90)]:
+            tk.Button(ctrl, text=label, font=('Malgun Gothic', 9, 'bold'),
+                      bg='#ECEFF1', fg='#37474F', relief='flat',
+                      cursor='hand2', padx=10, pady=3,
+                      command=lambda d=days: _quick(d)).pack(side='left', padx=2)
+
+        # ── 요약 카드 ──
+        sum_frame = tk.Frame(p, bg=C['bg'])
+        sum_frame.pack(fill='x', padx=20, pady=(6, 4))
+        sum_lbls = {}
+        for k, color in [('총 건수', '#455A64'), ('수주', '#26A69A'),
+                         ('작업지시', '#FFA726'), ('생산실적', '#EF5350'),
+                         ('검사', '#AB47BC'), ('출하', '#FF7043')]:
+            box = tk.Frame(sum_frame, bg='white', padx=10, pady=8)
+            box.pack(side='left', expand=True, fill='x', padx=3)
+            tk.Label(box, text=k, font=('Malgun Gothic', 9),
+                     fg='#90A4AE', bg='white').pack()
+            l = tk.Label(box, text='-', font=('Malgun Gothic', 14, 'bold'),
+                         fg=color, bg='white')
+            l.pack()
+            sum_lbls[k] = l
+
+        # ── 결과 트리 ──
+        tf = tk.Frame(p, bg='white'); tf.pack(fill='both', expand=True, padx=20, pady=(4, 12))
+        cols = ('등록일시', '종류', '식별번호', '내용', '담당')
+        widths = (160, 100, 180, 350, 120)
+        tree = ttk.Treeview(tf, columns=cols, show='headings', height=18)
+        for c, w in zip(cols, widths):
+            tree.heading(c, text=c); tree.column(c, width=w, anchor='center')
+        sy = ttk.Scrollbar(tf, orient='vertical', command=tree.yview)
+        sx = ttk.Scrollbar(tf, orient='horizontal', command=tree.xview)
+        tree.configure(yscrollcommand=sy.set, xscrollcommand=sx.set)
+        sy.pack(side='right', fill='y'); sx.pack(side='bottom', fill='x')
+        tree.pack(fill='both', expand=True)
+
+        # 종류별 색상 태그
+        tree.tag_configure('수주',     background='#E0F2F1')
+        tree.tag_configure('작업지시', background='#FFF3E0')
+        tree.tag_configure('생산실적', background='#FFEBEE')
+        tree.tag_configure('품질검사', background='#F3E5F5')
+        tree.tag_configure('출하',     background='#FBE9E7')
+        tree.tag_configure('품목',     background='#E8EAF6')
+        tree.tag_configure('고객사',   background='#E0F7FA')
+        tree.tag_configure('설비',     background='#EFEBE9')
+
+        def _query():
+            for r in tree.get_children(): tree.delete(r)
+            f = (from_e.get() or from_var.get()).strip()
+            t = (to_e.get() or to_var.get()).strip()
+            if not f or not t:
+                messagebox.showerror("오류", "시작일/종료일을 입력하세요."); return
+            kind = (kind_combo.get() or kind_var.get()).strip()
+
+            rows = []  # (datetime_str, 종류, 식별번호, 내용, 담당)
+
+            # 수주
+            if kind in ('전체', '수주'):
+                for r in self.db.query("""
+                    SELECT o.created_at, o.order_no, c.name, i.name, o.quantity, o.status,
+                           COALESCE(u.name, '-')
+                    FROM orders o
+                    LEFT JOIN customers c ON o.customer_id=c.id
+                    LEFT JOIN items i ON o.item_id=i.id
+                    LEFT JOIN users u ON o.created_by=u.id
+                    WHERE date(o.created_at) BETWEEN ? AND ?
+                    ORDER BY o.created_at DESC
+                """, (f, t)):
+                    rows.append((r[0], '수주', r[1],
+                                 f"{r[2] or '-'} / {r[3] or '-'} / {r[4]}개 [{r[5]}]",
+                                 r[6]))
+
+            # 작업지시
+            if kind in ('전체', '작업지시'):
+                for r in self.db.query("""
+                    SELECT wo.created_at, wo.wo_no, o.order_no, i.name,
+                           wo.process, wo.plan_qty, wo.status, COALESCE(u.name,'-')
+                    FROM work_orders wo
+                    LEFT JOIN orders o ON wo.order_id=o.id
+                    LEFT JOIN items i ON o.item_id=i.id
+                    LEFT JOIN users u ON wo.worker_id=u.id
+                    WHERE date(wo.created_at) BETWEEN ? AND ?
+                    ORDER BY wo.created_at DESC
+                """, (f, t)):
+                    rows.append((r[0], '작업지시', r[1],
+                                 f"[{r[2] or '-'}] {r[3] or '-'} / {r[4]} / 계획 {r[5]} [{r[6]}]",
+                                 r[7]))
+
+            # 생산실적
+            if kind in ('전체', '생산실적'):
+                for r in self.db.query("""
+                    SELECT pr.created_at, wo.wo_no, i.name,
+                           pr.qty, pr.defect_qty, COALESCE(u.name,'-'), pr.work_date
+                    FROM production_records pr
+                    LEFT JOIN work_orders wo ON pr.wo_id=wo.id
+                    LEFT JOIN orders o ON wo.order_id=o.id
+                    LEFT JOIN items i ON o.item_id=i.id
+                    LEFT JOIN users u ON pr.worker_id=u.id
+                    WHERE date(pr.created_at) BETWEEN ? AND ?
+                    ORDER BY pr.created_at DESC
+                """, (f, t)):
+                    rows.append((r[0], '생산실적', r[1] or '-',
+                                 f"{r[2] or '-'} / 양품 {r[3]} / 불량 {r[4]} (작업일 {r[6]})",
+                                 r[5]))
+
+            # 품질검사
+            if kind in ('전체', '품질검사'):
+                for r in self.db.query("""
+                    SELECT i.created_at, o.order_no, it.name, i.inspect_type,
+                           i.result, i.sample_qty, i.defect_qty, COALESCE(u.name,'-')
+                    FROM inspections i
+                    LEFT JOIN orders o ON i.order_id=o.id
+                    LEFT JOIN items it ON o.item_id=it.id
+                    LEFT JOIN users u ON i.inspector_id=u.id
+                    WHERE date(i.created_at) BETWEEN ? AND ?
+                    ORDER BY i.created_at DESC
+                """, (f, t)):
+                    rows.append((r[0], '품질검사', r[1] or '-',
+                                 f"{r[2] or '-'} / {r[3]} / {r[4]} (샘플 {r[5]}, 불량 {r[6]})",
+                                 r[7]))
+
+            # 출하
+            if kind in ('전체', '출하'):
+                for r in self.db.query("""
+                    SELECT sh.created_at, sh.ship_no, o.order_no, c.name, i.name,
+                           sh.quantity, COALESCE(u.name,'-')
+                    FROM shipments sh
+                    LEFT JOIN orders o ON sh.order_id=o.id
+                    LEFT JOIN customers c ON o.customer_id=c.id
+                    LEFT JOIN items i ON o.item_id=i.id
+                    LEFT JOIN users u ON sh.shipped_by=u.id
+                    WHERE date(sh.created_at) BETWEEN ? AND ?
+                    ORDER BY sh.created_at DESC
+                """, (f, t)):
+                    rows.append((r[0], '출하', r[1],
+                                 f"[{r[2] or '-'}] {r[3] or '-'} / {r[4] or '-'} / {r[5]}개",
+                                 r[6]))
+
+            # 품목 (created_at 컬럼이 없을 수 있음 - active=1만)
+            if kind in ('전체', '품목'):
+                try:
+                    for r in self.db.query("""
+                        SELECT it.created_at, it.part_no, it.name, it.spec,
+                               it.material, COALESCE(c.name,'-')
+                        FROM items it LEFT JOIN customers c ON it.customer_id=c.id
+                        WHERE date(it.created_at) BETWEEN ? AND ?
+                        ORDER BY it.created_at DESC
+                    """, (f, t)):
+                        rows.append((r[0] or '-', '품목', r[1] or '-',
+                                     f"{r[2] or '-'} / {r[3] or '-'} / {r[4] or '-'}",
+                                     r[5]))
+                except Exception: pass
+
+            # 고객사
+            if kind in ('전체', '고객사'):
+                try:
+                    for r in self.db.query("""
+                        SELECT created_at, code, name, contact, phone
+                        FROM customers
+                        WHERE date(created_at) BETWEEN ? AND ?
+                        ORDER BY created_at DESC
+                    """, (f, t)):
+                        rows.append((r[0] or '-', '고객사', r[1] or '-',
+                                     f"{r[2] or '-'} ({r[3] or '-'} / {r[4] or '-'})",
+                                     '-'))
+                except Exception: pass
+
+            # 설비
+            if kind in ('전체', '설비'):
+                try:
+                    for r in self.db.query("""
+                        SELECT created_at, code, name, process, spec, status
+                        FROM equipments
+                        WHERE date(created_at) BETWEEN ? AND ?
+                        ORDER BY created_at DESC
+                    """, (f, t)):
+                        rows.append((r[0] or '-', '설비', r[1] or '-',
+                                     f"{r[2] or '-'} / {r[3] or '-'} / {r[4] or '-'} [{r[5] or '-'}]",
+                                     '-'))
+                except Exception: pass
+
+            # 등록일시 내림차순 정렬
+            rows.sort(key=lambda x: str(x[0]), reverse=True)
+
+            # 종류별 카운트
+            counts = {'수주':0, '작업지시':0, '생산실적':0, '품질검사':0, '출하':0,
+                      '품목':0, '고객사':0, '설비':0}
+            for r in rows:
+                counts[r[1]] = counts.get(r[1], 0) + 1
+                tree.insert('', 'end', values=r, tags=(r[1],))
+
+            sum_lbls['총 건수'].config(text=f"{len(rows):,}")
+            sum_lbls['수주'].config(text=f"{counts['수주']:,}")
+            sum_lbls['작업지시'].config(text=f"{counts['작업지시']:,}")
+            sum_lbls['생산실적'].config(text=f"{counts['생산실적']:,}")
+            sum_lbls['검사'].config(text=f"{counts['품질검사']:,}")
+            sum_lbls['출하'].config(text=f"{counts['출하']:,}")
+
+        # 콤보 변경 시 자동 조회
+        kind_combo.bind('<<ComboboxSelected>>', lambda e: _query())
+        # 초기 조회
+        _query()
+
+        # 액션 버튼
+        bf = tk.Frame(ctrl, bg='white')
+        bf.pack(side='left', padx=(20, 0))
+        color_btn(bf, "조회", _query, theme='action', size=11, padx=14, pady=6).pack(side='left', padx=4)
+        color_btn(bf, "데이터 저장",
+                  lambda: export_tree_csv(tree, '일자별이력', '일자별 이력 저장'),
+                  theme='export', size=11, padx=14, pady=6).pack(side='left', padx=4)
 
     # ========================================================
     # 품목 관리 (메뉴에서 제거됨, 호환용으로 보존)
