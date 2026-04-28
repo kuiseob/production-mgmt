@@ -1365,8 +1365,6 @@ class ProductionApp:
         color_btn(btn_row, "수주 등록", _save_new, theme='save').pack(side='right', padx=5)
         color_btn(btn_row, "수주 수정", _update, theme='update').pack(side='right', padx=5)
         color_btn(btn_row, "수주 삭제", _delete_selected, theme='delete').pack(side='right', padx=5)
-        color_btn(btn_row, "데이터 저장", lambda: export_tree_csv(tree, '수주목록', '수주 데이터 저장'),
-                  theme='export').pack(side='right', padx=5)
         # 초기화 — 화면 우측 하단
         _reset_bar = tk.Frame(p, bg=C['bg']); _reset_bar.pack(side='bottom', fill='x', padx=20, pady=8)
         color_btn(_reset_bar, "초기화", _clear_form, theme='neutral', size=9, padx=10, pady=5).pack(side='right')
@@ -1678,8 +1676,6 @@ class ProductionApp:
         color_btn(bf, "작업 완료", _complete, theme='update').pack(side='left', padx=4)
         color_btn(bf, "WO 수정", _wo_modify, theme='update').pack(side='left', padx=4)
         color_btn(bf, "WO 삭제", _wo_delete, theme='delete').pack(side='left', padx=4)
-        color_btn(bf, "데이터 저장", lambda: export_tree_csv(tree, '작업지시', '작업지시 데이터 저장'),
-                  theme='export').pack(side='left', padx=4)
         # 초기화 — 화면 우측 하단
         _reset_bar = tk.Frame(p, bg=C['bg']); _reset_bar.pack(side='bottom', fill='x', padx=20, pady=8)
         color_btn(_reset_bar, "초기화", _clear_wo_form, theme='neutral', size=9, padx=10, pady=5).pack(side='right')
@@ -1874,8 +1870,6 @@ class ProductionApp:
         color_btn(bf, "실적 등록", _save_new, theme='save').pack(side='right', padx=5)
         color_btn(bf, "실적 수정", _update, theme='update').pack(side='right', padx=5)
         color_btn(bf, "실적 삭제", _delete, theme='delete').pack(side='right', padx=5)
-        color_btn(bf, "데이터 저장", lambda: export_tree_csv(rtree, '생산실적', '생산실적 데이터 저장'),
-                  theme='export').pack(side='right', padx=5)
         # 초기화 — 화면 우측 하단
         _reset_bar = tk.Frame(p, bg=C['bg']); _reset_bar.pack(side='bottom', fill='x', padx=20, pady=8)
         color_btn(_reset_bar, "초기화", _clear_form, theme='neutral', size=9, padx=10, pady=5).pack(side='right')
@@ -2092,8 +2086,6 @@ class ProductionApp:
         color_btn(bf, "검사 결과 저장", _save_new, theme='save').pack(side='right', padx=5)
         color_btn(bf, "검사 수정", _update, theme='update').pack(side='right', padx=5)
         color_btn(bf, "검사 삭제", _delete, theme='delete').pack(side='right', padx=5)
-        color_btn(bf, "데이터 저장", lambda: export_tree_csv(itree, '품질검사', '검사 데이터 저장'),
-                  theme='export').pack(side='right', padx=5)
         _reset_bar = tk.Frame(p, bg=C['bg']); _reset_bar.pack(side='bottom', fill='x', padx=20, pady=8)
         color_btn(_reset_bar, "초기화", _clear_form, theme='neutral', size=9, padx=10, pady=5).pack(side='right')
         self.root.bind('<Escape>', lambda e: _clear_form())
@@ -2282,8 +2274,6 @@ class ProductionApp:
         color_btn(bf, "출하 등록", _save_new, theme='save').pack(side='right', padx=5)
         color_btn(bf, "출하 수정", _update, theme='update').pack(side='right', padx=5)
         color_btn(bf, "출하 삭제", _delete, theme='delete').pack(side='right', padx=5)
-        color_btn(bf, "데이터 저장", lambda: export_tree_csv(htree, '출하이력', '출하 데이터 저장'),
-                  theme='export').pack(side='right', padx=5)
         _reset_bar = tk.Frame(p, bg=C['bg']); _reset_bar.pack(side='bottom', fill='x', padx=20, pady=8)
         color_btn(_reset_bar, "초기화", _clear_form, theme='neutral', size=9, padx=10, pady=5).pack(side='right')
         self.root.bind('<Escape>', lambda e: _clear_form())
@@ -3262,9 +3252,6 @@ class ProductionApp:
         bf = tk.Frame(ctrl, bg='white')
         bf.pack(side='left', padx=(20, 0))
         color_btn(bf, "조회", _query, theme='action', size=11, padx=14, pady=6).pack(side='left', padx=4)
-        color_btn(bf, "데이터 저장",
-                  lambda: export_tree_csv(tree, '일자별이력', '일자별 이력 저장'),
-                  theme='export', size=11, padx=14, pady=6).pack(side='left', padx=4)
 
     # ========================================================
     # 품목 관리 (메뉴에서 제거됨, 호환용으로 보존)
@@ -3357,8 +3344,6 @@ class ProductionApp:
         bf = tk.Frame(f, bg='white')
         bf.grid(row=2, column=5, padx=10, pady=4, sticky='e')
         color_btn(bf, "품목 저장", _save, theme='save').pack(side='right', padx=4)
-        color_btn(bf, "데이터 저장", lambda: export_tree_csv(tree, '품목목록', '품목 데이터 저장'),
-                  theme='export').pack(side='right', padx=4)
         _reset_bar = tk.Frame(p, bg=C['bg']); _reset_bar.pack(side='bottom', fill='x', padx=20, pady=8)
         color_btn(_reset_bar, "초기화", _clear_form, theme='neutral', size=9, padx=10, pady=5).pack(side='right')
         self.root.bind('<Escape>', lambda e: _clear_form())
@@ -3527,8 +3512,6 @@ class ProductionApp:
         color_btn(btn_row, "고객사 등록", _save_new, theme='save').pack(side='right', padx=5)
         color_btn(btn_row, "고객사 수정", _update, theme='update').pack(side='right', padx=5)
         color_btn(btn_row, "고객사 삭제", _delete, theme='delete').pack(side='right', padx=5)
-        color_btn(btn_row, "데이터 저장", lambda: export_tree_csv(tree, '고객사목록', '고객사 데이터 저장'),
-                  theme='export').pack(side='right', padx=5)
         _reset_bar = tk.Frame(p, bg=C['bg']); _reset_bar.pack(side='bottom', fill='x', padx=20, pady=8)
         color_btn(_reset_bar, "초기화", _clear_form, theme='neutral', size=9, padx=10, pady=5).pack(side='right')
         self.root.bind('<Escape>', lambda e: _clear_form())
@@ -3580,8 +3563,6 @@ class ProductionApp:
         bf = tk.Frame(f, bg='white')
         bf.grid(row=1, column=6, padx=10, pady=4, sticky='e')
         color_btn(bf, "설비 저장", _save, theme='save').pack(side='right', padx=4)
-        color_btn(bf, "데이터 저장", lambda: export_tree_csv(tree, '설비목록', '설비 데이터 저장'),
-                  theme='export').pack(side='right', padx=4)
         _reset_bar = tk.Frame(p, bg=C['bg']); _reset_bar.pack(side='bottom', fill='x', padx=20, pady=8)
         color_btn(_reset_bar, "초기화", _clear_form, theme='neutral', size=9, padx=10, pady=5).pack(side='right')
         self.root.bind('<Escape>', lambda e: _clear_form())
