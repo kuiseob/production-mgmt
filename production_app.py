@@ -1970,43 +1970,98 @@ class ProductionApp:
     # ========================================================
     def _pg_shipment(self):
         p = self.page_area
-        page_header(p, "출하 관리", "  완성품 납품 등록")
+        page_header(p, "출하 관리", "  완성품 납품 — 등록 / 수정 / 삭제")
 
-        wrap = tk.Frame(p, bg=C['bg']); wrap.pack(fill='both', expand=True, padx=20, pady=10)
+        # ── 1. 출하 가능 주문 (검사 합격) ──
+        make_label(p, " 1. 출하 가능 주문  (검사 합격)",
+                   bold=True, size=11, bg=C['bg']).pack(anchor='w', padx=22, pady=(4, 2))
+        wrap = tk.Frame(p, bg=C['bg']); wrap.pack(fill='x', padx=20, pady=4)
         cols = ('OID', '주문번호', '고객사', '생산품명', '수량', '납기일', '검사결과')
         ws   = (0, 135, 150, 100, 150, 70, 100, 90)
-        tree = make_tree(wrap, cols, ws, height=14)
+        tree = make_tree(wrap, cols, ws, height=6)
         tree.column('OID', width=0, stretch=False)
 
-        def _load():
+        def _load_orders():
             rows = self.db.query("""
                 SELECT o.id, o.order_no, c.name, i.name, o.quantity, o.due_date,
                        COALESCE((SELECT result FROM inspections WHERE order_id=o.id ORDER BY id DESC LIMIT 1),'-')
                 FROM orders o
                 LEFT JOIN customers c ON o.customer_id=c.id
                 LEFT JOIN items i ON o.item_id=i.id
-                WHERE o.status='진행중'
+                WHERE o.status IN ('진행중','출하완료')
                   AND EXISTS(SELECT 1 FROM inspections WHERE order_id=o.id AND result='합격')
-                ORDER BY o.due_date
+                ORDER BY o.due_date DESC
             """)
             fill_tree(tree, rows, lambda i, r: 'pass_tag')
 
-        _load()
+        # ── 2. 전체 출하 이력 ──
+        make_label(p, " 2. 출하 이력  (행 클릭 → 수정/삭제 모드)",
+                   bold=True, size=11, bg=C['bg']).pack(anchor='w', padx=22, pady=(8, 2))
+        hwrap = tk.Frame(p, bg=C['bg']); hwrap.pack(fill='x', padx=20, pady=4)
+        hcols = ('SID', '출하번호', '주문번호', '고객사', '생산품명', '출하수량', '출하일', '담당', '비고')
+        hws   = (0, 130, 135, 130, 100, 80, 100, 90, 200)
+        htree = make_tree(hwrap, hcols, hws, height=6)
+        htree.column('SID', width=0, stretch=False)
+
+        def _load_ships():
+            rows = self.db.query("""
+                SELECT sh.id, sh.ship_no, o.order_no, c.name, i.name,
+                       sh.quantity, sh.ship_date,
+                       COALESCE(u.name,'-'), COALESCE(sh.memo,'')
+                FROM shipments sh
+                LEFT JOIN orders o ON sh.order_id=o.id
+                LEFT JOIN customers c ON o.customer_id=c.id
+                LEFT JOIN items i ON o.item_id=i.id
+                LEFT JOIN users u ON sh.shipped_by=u.id
+                ORDER BY sh.ship_date DESC, sh.id DESC LIMIT 50
+            """)
+            fill_tree(htree, rows, lambda i, r: 'even' if i%2 else '')
 
         f = tk.Frame(p, bg='white', padx=22, pady=14); f.pack(fill='x', padx=20, pady=8)
         sel_var = tk.StringVar(value="출하할 주문을 선택하세요")
-        sel = [None, None]  # id, qty
+        sel_oid = [None]   # 신규 등록 대상 주문 id
+        edit_sid = [None]  # 수정/삭제 대상 출하 id
+        edit_oid = [None]  # 수정 시 원래 주문 id
 
-        def _on_sel(e):
+        def _clear_form():
+            edit_sid[0] = None
+            edit_oid[0] = None
+            dt_v.set(datetime.now().strftime("%Y-%m-%d"))
+            q_v.set(''); m_v.set('')
+            mode_lbl.config(text="신규 출하 등록 중", fg='#2E7D32', bg='#E8F5E9')
+            htree.selection_remove(htree.selection())
+
+        def _on_order_sel(e):
             s = tree.selection()
             if not s: return
             v = tree.item(s[0])['values']
-            sel[0] = v[0]; sel[1] = v[4]
+            sel_oid[0] = v[0]
             sel_var.set(f"  {v[1]}  ({v[2]} / {v[3]} / {v[4]}개)")
+            _clear_form()
+            q_v.set(str(v[4] or ''))  # 출하수량 기본값 = 주문수량
+        tree.bind('<<TreeviewSelect>>', _on_order_sel)
 
-        tree.bind('<<TreeviewSelect>>', _on_sel)
+        def _on_ship_sel(e):
+            s = htree.selection()
+            if not s: return
+            v = htree.item(s[0])['values']
+            edit_sid[0] = v[0]
+            # 출하번호로 원래 주문 id 조회
+            row = self.db.query("SELECT order_id FROM shipments WHERE id=?", (v[0],))
+            edit_oid[0] = row[0][0] if row else None
+            sel_var.set(f"  [{v[1]}]  {v[2]} / {v[3]} / {v[4]}")
+            dt_v.set(str(v[6] or ''))
+            q_v.set(str(v[5] or ''))
+            m_v.set(str(v[8] or ''))
+            mode_lbl.config(text=f"출하 [{v[1]}] 수정 중", fg='#E65100', bg='#FFF3E0')
+        htree.bind('<<TreeviewSelect>>', _on_ship_sel)
 
         make_label(f, "출하 등록", bold=True, size=11, color=C['primary'], bg='white').grid(row=0, column=0, columnspan=6, sticky='w')
+        mode_lbl = tk.Label(f, text="신규 출하 등록 중",
+                            font=('Malgun Gothic', 10, 'bold'),
+                            bg='#E8F5E9', fg='#2E7D32', padx=10, pady=3)
+        mode_lbl.grid(row=0, column=6, columnspan=2, sticky='e', padx=8)
+
         make_label(f, "선택:", size=9, color=C['secondary'], bg='white').grid(row=1, column=0, sticky='w', pady=4)
         tk.Label(f, textvariable=sel_var, font=('Malgun Gothic', 10, 'bold'),
                  fg=C['primary'], bg='white').grid(row=1, column=1, columnspan=5, sticky='w')
@@ -2027,47 +2082,73 @@ class ProductionApp:
             except Exception: pass
             return (var.get() or default).strip()
 
-        def _save():
-            if not sel[0]:
+        def _gather():
+            return _read(dt_e, dt_v), _read(q_e, q_v), _read(m_e, m_v)
+
+        def _save_new():
+            if edit_sid[0] is not None:
+                if not messagebox.askyesno("확인", "현재 수정 모드입니다.\n신규 등록으로 전환할까요?"):
+                    return
+                _clear_form(); return
+            if not sel_oid[0]:
                 messagebox.showerror("오류", "주문을 선택하세요."); return
-            q_s = _read(q_e, q_v)
-            dt_s = _read(dt_e, dt_v)
-            m_s = _read(m_e, m_v)
+            dt_s, q_s, m_s = _gather()
             if not q_s:
-                messagebox.showerror("입력 오류",
-                    f"출하수량을 입력하세요.\n현재 값: '{q_s}'"); return
+                messagebox.showerror("입력 오류", "출하수량을 입력하세요."); return
             try: q = int(q_s)
-            except: messagebox.showerror("오류",
-                f"수량을 정수로 입력하세요. (현재: '{q_s}')"); return
+            except: messagebox.showerror("오류", f"수량을 정수로 입력하세요. (현재: '{q_s}')"); return
             ship_no = self.db.next_ship_no()
             self.db.execute("""
                 INSERT INTO shipments(order_id,ship_no,ship_date,quantity,shipped_by,memo)
                 VALUES(?,?,?,?,?,?)
-            """, (sel[0], ship_no, dt_s, q, self.user['id'], m_s))
-            self.db.execute("UPDATE orders SET status='출하완료' WHERE id=?", (sel[0],))
+            """, (sel_oid[0], ship_no, dt_s, q, self.user['id'], m_s))
+            self.db.execute("UPDATE orders SET status='출하완료' WHERE id=?", (sel_oid[0],))
             messagebox.showinfo("완료", f"출하번호 [{ship_no}] 등록 완료!")
-            q_v.set(''); m_v.set('')
-            sel[0] = None; sel_var.set("출하할 주문을 선택하세요")
-            _load()
+            sel_oid[0] = None; sel_var.set("출하할 주문을 선택하세요")
+            _clear_form(); _load_orders(); _load_ships()
 
-        color_btn(f, "출하 등록", _save, theme='save').grid(row=4, column=5, pady=10, sticky='e')
+        def _update():
+            if edit_sid[0] is None:
+                messagebox.showwarning("수정", "수정할 출하를 이력에서 선택하세요."); return
+            dt_s, q_s, m_s = _gather()
+            if not q_s:
+                messagebox.showerror("입력 오류", "출하수량을 입력하세요."); return
+            try: q = int(q_s)
+            except: messagebox.showerror("오류", "수량을 정수로 입력하세요."); return
+            if not messagebox.askyesno("확인",
+                f"출하 정보를 수정하시겠습니까?\n출하일: {dt_s} / 수량: {q}"):
+                return
+            self.db.execute("""
+                UPDATE shipments SET ship_date=?, quantity=?, memo=?
+                WHERE id=?
+            """, (dt_s, q, m_s, edit_sid[0]))
+            messagebox.showinfo("완료", "출하 수정 완료!")
+            _clear_form(); _load_orders(); _load_ships()
 
-        # 출하 이력
-        make_label(p, " 출하 이력", bold=True, size=10, bg=C['bg']).pack(anchor='w', padx=22, pady=(6, 0))
-        wrap2 = tk.Frame(p, bg=C['bg']); wrap2.pack(fill='x', padx=20, pady=4)
-        cols2 = ('출하번호', '주문번호', '고객사', '생산품명', '출하수량', '출하일', '담당')
-        ws2   = (130, 135, 150, 100, 80, 100, 90)
-        tree2 = make_tree(wrap2, cols2, ws2, height=5)
-        rows2 = self.db.query("""
-            SELECT sh.ship_no, o.order_no, c.name, i.name, sh.quantity, sh.ship_date, u.name
-            FROM shipments sh
-            LEFT JOIN orders o ON sh.order_id=o.id
-            LEFT JOIN customers c ON o.customer_id=c.id
-            LEFT JOIN items i ON o.item_id=i.id
-            LEFT JOIN users u ON sh.shipped_by=u.id
-            ORDER BY sh.ship_date DESC LIMIT 30
-        """)
-        fill_tree(tree2, rows2)
+        def _delete():
+            if edit_sid[0] is None:
+                messagebox.showwarning("삭제", "삭제할 출하를 이력에서 선택하세요."); return
+            if not messagebox.askyesno("삭제 확인",
+                "이 출하 기록을 삭제하시겠습니까?\n주문 상태는 '진행중'으로 되돌아갑니다.\n이 작업은 되돌릴 수 없습니다."):
+                return
+            oid = edit_oid[0]
+            self.db.execute("DELETE FROM shipments WHERE id=?", (edit_sid[0],))
+            # 해당 주문에 다른 출하가 없으면 진행중으로 되돌리기
+            if oid:
+                cnt = self.db.query("SELECT COUNT(*) FROM shipments WHERE order_id=?", (oid,))[0][0]
+                if cnt == 0:
+                    self.db.execute("UPDATE orders SET status='진행중' WHERE id=?", (oid,))
+            messagebox.showinfo("삭제 완료", "출하가 삭제되었습니다.")
+            _clear_form(); _load_orders(); _load_ships()
+
+        # 3개 액션 버튼
+        bf = tk.Frame(f, bg='white')
+        bf.grid(row=4, column=0, columnspan=8, pady=(12, 4), sticky='e')
+        color_btn(bf, "출하 등록", _save_new, theme='save').pack(side='right', padx=5)
+        color_btn(bf, "출하 수정", _update, theme='update').pack(side='right', padx=5)
+        color_btn(bf, "출하 삭제", _delete, theme='delete').pack(side='right', padx=5)
+
+        _load_orders(); _load_ships()
 
     # ========================================================
     # 보고서/출력
