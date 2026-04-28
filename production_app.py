@@ -1758,12 +1758,14 @@ class ProductionApp:
     # ========================================================
     def _pg_inspection(self):
         p = self.page_area
-        page_header(p, "품질검사", "  자주검사 / 최종검사")
+        page_header(p, "품질검사", "  자주검사 / 최종검사 — 등록 / 수정 / 삭제")
 
-        wrap = tk.Frame(p, bg=C['bg']); wrap.pack(fill='both', expand=True, padx=20, pady=10)
+        # ── 1. 주문 선택 트리 ──
+        make_label(p, " 1. 주문 선택", bold=True, size=11, bg=C['bg']).pack(anchor='w', padx=22, pady=(4, 2))
+        wrap = tk.Frame(p, bg=C['bg']); wrap.pack(fill='x', padx=20, pady=4)
         cols = ('OID', '주문번호', '고객사', '생산품명', '수량', '진행률', '검사상태')
         ws   = (0, 135, 150, 100, 150, 70, 80, 90)
-        tree = make_tree(wrap, cols, ws, height=14)
+        tree = make_tree(wrap, cols, ws, height=8)
         tree.column('OID', width=0, stretch=False)
 
         def _load():
@@ -1778,8 +1780,8 @@ class ProductionApp:
                 FROM orders o
                 LEFT JOIN customers c ON o.customer_id=c.id
                 LEFT JOIN items i ON o.item_id=i.id
-                WHERE o.status='진행중'
-                ORDER BY o.due_date
+                WHERE o.status IN ('진행중','출하완료')
+                ORDER BY o.due_date DESC
             """)
             def tag(i, r):
                 if r[6] == '합격': return 'pass_tag'
@@ -1787,11 +1789,45 @@ class ProductionApp:
                 return 'even' if i%2 else ''
             fill_tree(tree, rows, tag)
 
-        _load()
+        # ── 2. 검사 이력 트리 ──
+        make_label(p, " 2. 검사 이력  (행 클릭 → 수정/삭제 모드)",
+                   bold=True, size=11, bg=C['bg']).pack(anchor='w', padx=22, pady=(8, 2))
+        iwrap = tk.Frame(p, bg=C['bg']); iwrap.pack(fill='x', padx=20, pady=4)
+        icols = ('IID', '검사일', '구분', '결과', '샘플', '불량', '사유', '비고')
+        iws   = (0, 110, 80, 70, 60, 60, 200, 200)
+        itree = make_tree(iwrap, icols, iws, height=5)
+        itree.column('IID', width=0, stretch=False)
 
         f = tk.Frame(p, bg='white', padx=22, pady=14); f.pack(fill='x', padx=20, pady=8)
         sel_var = tk.StringVar(value="주문을 선택하세요")
         sel_id  = [None]
+        edit_iid = [None]
+
+        def _load_inspections():
+            for x in itree.get_children(): itree.delete(x)
+            if not sel_id[0]: return
+            rows = self.db.query("""
+                SELECT id, inspect_date, inspect_type, result,
+                       COALESCE(sample_qty,0), COALESCE(defect_qty,0),
+                       COALESCE(defect_reason,''), COALESCE(memo,'')
+                FROM inspections
+                WHERE order_id=?
+                ORDER BY inspect_date DESC, id DESC
+            """, (sel_id[0],))
+            def tag(i, r):
+                if r[3] == '합격': return 'pass_tag'
+                if r[3] == '불합격': return 'fail_tag'
+                return 'even' if i%2 else ''
+            fill_tree(itree, rows, tag)
+
+        def _clear_form():
+            edit_iid[0] = None
+            type_v.set('최종검사')
+            dt_v.set(datetime.now().strftime("%Y-%m-%d"))
+            s_v.set(''); d_v.set('0'); r_v.set(''); m_v.set('')
+            res_v.set('합격')
+            mode_lbl.config(text="신규 검사 등록 중", fg='#2E7D32', bg='#E8F5E9')
+            itree.selection_remove(itree.selection())
 
         def _on_sel(e):
             s = tree.selection()
@@ -1799,10 +1835,31 @@ class ProductionApp:
             v = tree.item(s[0])['values']
             sel_id[0] = v[0]
             sel_var.set(f"  {v[1]}  ({v[3]} / 수량 {v[4]})")
-
+            _clear_form()
+            _load_inspections()
         tree.bind('<<TreeviewSelect>>', _on_sel)
 
-        make_label(f, "검사 결과 등록", bold=True, size=11, color=C['primary'], bg='white').grid(row=0, column=0, columnspan=8, sticky='w')
+        def _on_insp_select(e):
+            s = itree.selection()
+            if not s: return
+            v = itree.item(s[0])['values']
+            edit_iid[0] = v[0]
+            dt_v.set(str(v[1] or ''))
+            type_v.set(str(v[2] or '최종검사'))
+            res_v.set(str(v[3] or '합격'))
+            s_v.set(str(v[4] or '0'))
+            d_v.set(str(v[5] or '0'))
+            r_v.set(str(v[6] or ''))
+            m_v.set(str(v[7] or ''))
+            mode_lbl.config(text=f"검사 [{v[1]}] 수정 중", fg='#E65100', bg='#FFF3E0')
+        itree.bind('<<TreeviewSelect>>', _on_insp_select)
+
+        make_label(f, "검사 결과 등록", bold=True, size=11, color=C['primary'], bg='white').grid(row=0, column=0, columnspan=6, sticky='w')
+        mode_lbl = tk.Label(f, text="신규 검사 등록 중",
+                            font=('Malgun Gothic', 10, 'bold'),
+                            bg='#E8F5E9', fg='#2E7D32', padx=10, pady=3)
+        mode_lbl.grid(row=0, column=6, columnspan=2, sticky='e', padx=8)
+
         make_label(f, "선택:", size=9, color=C['secondary'], bg='white').grid(row=1, column=0, sticky='w', pady=4)
         tk.Label(f, textvariable=sel_var, font=('Malgun Gothic', 10, 'bold'),
                  fg=C['primary'], bg='white').grid(row=1, column=1, columnspan=5, sticky='w')
@@ -1839,29 +1896,74 @@ class ProductionApp:
             except Exception: pass
             return (var.get() or default).strip()
 
-        def _save():
+        def _gather():
+            return {
+                'type': _read(type_e, type_v, '최종검사'),
+                'date': _read(dt_e, dt_v),
+                'samp': _read(s_e, s_v, '0'),
+                'def':  _read(d_e, d_v, '0'),
+                'rsn':  _read(r_e, r_v),
+                'memo': _read(m_e, m_v),
+                'res':  res_v.get() or '합격',
+            }
+
+        def _save_new():
             if not sel_id[0]:
                 messagebox.showerror("오류", "주문을 선택하세요."); return
-            t_s = _read(type_e, type_v, '최종검사')
-            d_s = _read(dt_e, dt_v)
-            s_s = _read(s_e, s_v, '0')
-            dq_s = _read(d_e, d_v, '0')
-            rr_s = _read(r_e, r_v)
-            mm_s = _read(m_e, m_v)
+            if edit_iid[0] is not None:
+                if not messagebox.askyesno("확인", "현재 수정 모드입니다.\n신규 등록으로 전환할까요?"):
+                    return
+                _clear_form(); return
+            g = _gather()
             try:
-                samp = int(s_s or 0); dqty = int(dq_s or 0)
+                samp = int(g['samp'] or 0); dqty = int(g['def'] or 0)
             except:
-                messagebox.showerror("오류",
-                    f"샘플수/불량수는 정수로 입력하세요.\n샘플:'{s_s}' 불량:'{dq_s}'"); return
+                messagebox.showerror("오류", f"샘플수/불량수는 정수로 입력하세요."); return
             self.db.execute("""
                 INSERT INTO inspections(order_id,inspect_type,inspect_date,sample_qty,result,defect_qty,defect_reason,inspector_id,memo)
                 VALUES(?,?,?,?,?,?,?,?,?)
-            """, (sel_id[0], t_s, d_s, samp, res_v.get(), dqty, rr_s, self.user['id'], mm_s))
-            messagebox.showinfo("완료", f"검사 결과 [{res_v.get()}] 등록!")
-            s_v.set(''); d_v.set('0'); r_v.set(''); m_v.set('')
-            _load()
+            """, (sel_id[0], g['type'], g['date'], samp, g['res'], dqty, g['rsn'], self.user['id'], g['memo']))
+            messagebox.showinfo("완료", f"검사 결과 [{g['res']}] 등록!")
+            _clear_form(); _load(); _load_inspections()
 
-        color_btn(f, "검사 결과 저장", _save, theme='save').grid(row=6, column=5, pady=10, sticky='e')
+        def _update():
+            if edit_iid[0] is None:
+                messagebox.showwarning("수정", "수정할 검사를 이력에서 선택하세요."); return
+            g = _gather()
+            try:
+                samp = int(g['samp'] or 0); dqty = int(g['def'] or 0)
+            except:
+                messagebox.showerror("오류", "샘플수/불량수는 정수로 입력하세요."); return
+            if not messagebox.askyesno("확인",
+                f"검사를 수정하시겠습니까?\n검사일: {g['date']} / 결과: {g['res']}"):
+                return
+            self.db.execute("""
+                UPDATE inspections
+                SET inspect_type=?, inspect_date=?, sample_qty=?, result=?,
+                    defect_qty=?, defect_reason=?, memo=?
+                WHERE id=?
+            """, (g['type'], g['date'], samp, g['res'], dqty, g['rsn'], g['memo'], edit_iid[0]))
+            messagebox.showinfo("완료", "검사 수정 완료!")
+            _clear_form(); _load(); _load_inspections()
+
+        def _delete():
+            if edit_iid[0] is None:
+                messagebox.showwarning("삭제", "삭제할 검사를 이력에서 선택하세요."); return
+            if not messagebox.askyesno("삭제 확인",
+                "이 검사 결과를 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다."):
+                return
+            self.db.execute("DELETE FROM inspections WHERE id=?", (edit_iid[0],))
+            messagebox.showinfo("삭제 완료", "검사가 삭제되었습니다.")
+            _clear_form(); _load(); _load_inspections()
+
+        # 3개 액션 버튼
+        bf = tk.Frame(f, bg='white')
+        bf.grid(row=6, column=0, columnspan=8, pady=(12, 4), sticky='e')
+        color_btn(bf, "검사 결과 저장", _save_new, theme='save').pack(side='right', padx=5)
+        color_btn(bf, "검사 수정", _update, theme='update').pack(side='right', padx=5)
+        color_btn(bf, "검사 삭제", _delete, theme='delete').pack(side='right', padx=5)
+
+        _load()
 
     # ========================================================
     # 출하 관리
