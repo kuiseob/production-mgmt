@@ -87,8 +87,17 @@ C = {
 # ============================================================
 class DB:
     def __init__(self):
-        base = os.path.dirname(os.path.abspath(__file__))
+        # PyInstaller로 묶인 EXE 실행 시 __file__은 임시 추출 폴더를 가리킴 → 종료 시 사라짐
+        # → 사용자 데이터를 영구 보존하려면 EXE 옆 또는 사용자 폴더에 저장해야 함
+        if getattr(sys, 'frozen', False):
+            # Windows EXE: EXE 파일과 같은 폴더 (사용자가 옮기지 않는 한 영속)
+            base = os.path.dirname(sys.executable)
+        else:
+            # Python 스크립트: 스크립트 폴더
+            base = os.path.dirname(os.path.abspath(__file__))
         self.path = os.path.join(base, "production.db")
+        # 디버그용으로 경로 표시
+        print(f"[DB] {self.path}")
         self.conn = sqlite3.connect(self.path, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         self._create()
@@ -283,12 +292,15 @@ class DB:
             ('SR38',        'CORE'),
         ]
 
-        # 기존 샘플 데이터가 있으면 정리 후 재등록
-        old = c.execute("SELECT COUNT(*) FROM equipments WHERE name LIKE 'DOOSAN%' OR name LIKE 'MAZAK%' OR name LIKE 'HYUNDAI%' OR name LIKE 'DMG%'").fetchone()[0]
-        # 생산품목이 미입력된 기존 데이터(spec='')도 새로 채우기 위해 재시드
-        empty_spec = c.execute("SELECT COUNT(*) FROM equipments WHERE COALESCE(spec,'')=''").fetchone()[0]
-        if old > 0 or empty_spec > 0:
-            c.execute("DELETE FROM equipments")
+        # 1회성 마이그레이션: 옛 샘플 데이터(DOOSAN/MAZAK/HYUNDAI/DMG)만 삭제
+        # ⚠ 사용자가 추가한 설비/수정한 데이터는 절대 삭제하지 않음
+        old = c.execute("""SELECT COUNT(*) FROM equipments
+            WHERE name LIKE 'DOOSAN%' OR name LIKE 'MAZAK%'
+               OR name LIKE 'HYUNDAI%' OR name LIKE 'DMG%'""").fetchone()[0]
+        if old > 0:
+            c.execute("""DELETE FROM equipments
+                WHERE name LIKE 'DOOSAN%' OR name LIKE 'MAZAK%'
+                   OR name LIKE 'HYUNDAI%' OR name LIKE 'DMG%'""")
 
         for i, (name, item) in enumerate(general_cnc, 1):
             code = f"CNC-{i:02d}"
