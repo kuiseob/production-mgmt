@@ -1566,12 +1566,14 @@ class ProductionApp:
     # ========================================================
     def _pg_production(self):
         p = self.page_area
-        page_header(p, "생산실적", "  공정별 생산 수량 입력")
+        page_header(p, "생산실적", "  공정별 생산 수량 입력 / 수정 / 삭제")
 
-        wrap = tk.Frame(p, bg=C['bg']); wrap.pack(fill='both', expand=True, padx=20, pady=10)
+        # ── 1. 작업지시(WO) 선택 트리 ──
+        make_label(p, " 1. 작업 선택", bold=True, size=11, bg=C['bg']).pack(anchor='w', padx=22, pady=(4, 2))
+        wrap = tk.Frame(p, bg=C['bg']); wrap.pack(fill='x', padx=20, pady=4)
         cols = ('WID', '작업번호', '생산품명', '공정', '설비', '계획', '실적', '불량', '진행률', '상태')
         ws   = (0, 130, 100, 140, 75, 90, 60, 60, 50, 70, 75)
-        tree = make_tree(wrap, cols, ws, height=12)
+        tree = make_tree(wrap, cols, ws, height=8)
         tree.column('WID', width=0, stretch=False)
 
         def _load():
@@ -1593,12 +1595,40 @@ class ProductionApp:
                 return 'urgent_tag' if r[9] == '진행중' else ('even' if i%2 else '')
             fill_tree(tree, rows, tag)
 
-        _load()
+        # ── 2. 선택한 작업의 생산실적 이력 트리 ──
+        make_label(p, " 2. 실적 이력  (행 클릭 → 수정/삭제 모드)",
+                   bold=True, size=11, bg=C['bg']).pack(anchor='w', padx=22, pady=(8, 2))
+        rwrap = tk.Frame(p, bg=C['bg']); rwrap.pack(fill='x', padx=20, pady=4)
+        rcols = ('PID', '작업일', '양품', '불량', '담당', '비고', '등록시각')
+        rws   = (0, 110, 80, 70, 90, 250, 140)
+        rtree = make_tree(rwrap, rcols, rws, height=6)
+        rtree.column('PID', width=0, stretch=False)
+
+        def _load_records():
+            for x in rtree.get_children(): rtree.delete(x)
+            if not sel_id[0]: return
+            rows = self.db.query("""
+                SELECT pr.id, pr.work_date, pr.qty, pr.defect_qty,
+                       COALESCE(u.name,'-'), COALESCE(pr.memo,''), pr.created_at
+                FROM production_records pr
+                LEFT JOIN users u ON pr.worker_id=u.id
+                WHERE pr.wo_id=?
+                ORDER BY pr.work_date DESC, pr.id DESC
+            """, (sel_id[0],))
+            fill_tree(rtree, rows, lambda i, r: 'even' if i%2 else '')
 
         # 입력 폼
         f = tk.Frame(p, bg='white', padx=22, pady=14); f.pack(fill='x', padx=20, pady=8)
         sel_var = tk.StringVar(value="작업을 선택하세요")
         sel_id  = [None]
+        edit_pid = [None]   # 수정 대상 PR id
+
+        def _clear_form():
+            edit_pid[0] = None
+            dt_v.set(datetime.now().strftime("%Y-%m-%d"))
+            q_v.set(''); d_v.set('0'); m_v.set('')
+            mode_lbl.config(text="신규 실적 입력 중", fg='#2E7D32', bg='#E8F5E9')
+            rtree.selection_remove(rtree.selection())
 
         def _on_sel(e):
             s = tree.selection()
@@ -1606,10 +1636,29 @@ class ProductionApp:
             v = tree.item(s[0])['values']
             sel_id[0] = v[0]
             sel_var.set(f"  {v[1]}  ({v[2]} / {v[3]} / {v[4]} / 계획 {v[5]})")
+            _clear_form()
+            _load_records()
 
         tree.bind('<<TreeviewSelect>>', _on_sel)
 
+        def _on_record_select(e):
+            s = rtree.selection()
+            if not s: return
+            v = rtree.item(s[0])['values']
+            edit_pid[0] = v[0]
+            dt_v.set(str(v[1] or ''))
+            q_v.set(str(v[2] or ''))
+            d_v.set(str(v[3] or '0'))
+            m_v.set(str(v[5] or ''))
+            mode_lbl.config(text=f"실적 [{v[1]}] 수정 중", fg='#E65100', bg='#FFF3E0')
+        rtree.bind('<<TreeviewSelect>>', _on_record_select)
+
         make_label(f, "생산실적 입력", bold=True, size=11, color=C['primary'], bg='white').grid(row=0, column=0, columnspan=6, sticky='w')
+        mode_lbl = tk.Label(f, text="신규 실적 입력 중",
+                            font=('Malgun Gothic', 10, 'bold'),
+                            bg='#E8F5E9', fg='#2E7D32', padx=10, pady=3)
+        mode_lbl.grid(row=0, column=6, columnspan=2, sticky='e', padx=8)
+
         make_label(f, "선택:", size=9, color=C['secondary'], bg='white').grid(row=1, column=0, sticky='w', pady=4)
         tk.Label(f, textvariable=sel_var, font=('Malgun Gothic', 10, 'bold'),
                  fg=C['primary'], bg='white').grid(row=1, column=1, columnspan=5, sticky='w')
@@ -1632,35 +1681,77 @@ class ProductionApp:
             except Exception: pass
             return (var.get() or default).strip()
 
-        def _save():
+        def _refresh_totals():
+            """선택된 WO의 누적 실적 재계산."""
+            if not sel_id[0]: return
+            tot = self.db.query("SELECT SUM(qty), SUM(defect_qty) FROM production_records WHERE wo_id=?", (sel_id[0],))[0]
+            self.db.execute("UPDATE work_orders SET done_qty=?, defect_qty=? WHERE id=?",
+                            (tot[0] or 0, tot[1] or 0, sel_id[0]))
+
+        def _save_new():
             if not sel_id[0]:
                 messagebox.showerror("오류", "작업을 선택하세요."); return
-            q_s = _read(q_e, q_v)
-            d_s = _read(d_e, d_v, '0')
-            dt_s = _read(dt_e, dt_v)
-            m_s = _read(m_e, m_v)
+            if edit_pid[0] is not None:
+                if not messagebox.askyesno("확인", "현재 수정 모드입니다.\n신규 등록으로 전환할까요?"):
+                    return
+                _clear_form(); return
+            q_s = _read(q_e, q_v); d_s = _read(d_e, d_v, '0')
+            dt_s = _read(dt_e, dt_v); m_s = _read(m_e, m_v)
             if not q_s:
-                messagebox.showerror("입력 오류",
-                    f"양품 수량을 입력하세요.\n현재 값: '{q_s}'"); return
-            try:
-                q = int(q_s); d = int(d_s or 0)
+                messagebox.showerror("입력 오류", f"양품 수량을 입력하세요. (현재: '{q_s}')"); return
+            try: q = int(q_s); d = int(d_s or 0)
             except:
                 messagebox.showerror("오류",
-                    f"수량은 정수로 입력하세요.\n양품: '{q_s}'  불량: '{d_s}'"); return
+                    f"수량은 정수로 입력하세요.\n양품:'{q_s}' 불량:'{d_s}'"); return
             wo = self.db.query("SELECT equipment_id, worker_id FROM work_orders WHERE id=?", (sel_id[0],))[0]
             self.db.execute("""
                 INSERT INTO production_records(wo_id,work_date,qty,defect_qty,worker_id,equipment_id,memo)
                 VALUES(?,?,?,?,?,?,?)
             """, (sel_id[0], dt_s, q, d, wo[1] or self.user['id'], wo[0], m_s))
-            # 누적 업데이트
-            tot = self.db.query("SELECT SUM(qty), SUM(defect_qty) FROM production_records WHERE wo_id=?", (sel_id[0],))[0]
-            self.db.execute("UPDATE work_orders SET done_qty=?, defect_qty=? WHERE id=?",
-                            (tot[0] or 0, tot[1] or 0, sel_id[0]))
+            _refresh_totals()
             messagebox.showinfo("완료", f"생산실적 등록! (양품 {q}, 불량 {d})")
-            q_v.set(''); d_v.set('0'); m_v.set('')
-            _load()
+            _clear_form(); _load(); _load_records()
 
-        color_btn(f, "실적 등록", _save, theme='save').grid(row=4, column=5, pady=10, sticky='e')
+        def _update():
+            if edit_pid[0] is None:
+                messagebox.showwarning("수정", "수정할 실적을 이력에서 선택하세요."); return
+            q_s = _read(q_e, q_v); d_s = _read(d_e, d_v, '0')
+            dt_s = _read(dt_e, dt_v); m_s = _read(m_e, m_v)
+            if not q_s:
+                messagebox.showerror("입력 오류", "양품 수량을 입력하세요."); return
+            try: q = int(q_s); d = int(d_s or 0)
+            except: messagebox.showerror("오류", "수량은 정수로 입력하세요."); return
+            if not messagebox.askyesno("확인",
+                f"실적을 수정하시겠습니까?\n작업일: {dt_s}\n양품: {q} / 불량: {d}"):
+                return
+            self.db.execute("""
+                UPDATE production_records
+                SET work_date=?, qty=?, defect_qty=?, memo=?
+                WHERE id=?
+            """, (dt_s, q, d, m_s, edit_pid[0]))
+            _refresh_totals()
+            messagebox.showinfo("완료", "실적 수정 완료!")
+            _clear_form(); _load(); _load_records()
+
+        def _delete():
+            if edit_pid[0] is None:
+                messagebox.showwarning("삭제", "삭제할 실적을 이력에서 선택하세요."); return
+            if not messagebox.askyesno("삭제 확인",
+                f"이 실적을 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다."):
+                return
+            self.db.execute("DELETE FROM production_records WHERE id=?", (edit_pid[0],))
+            _refresh_totals()
+            messagebox.showinfo("삭제 완료", "실적이 삭제되었습니다.")
+            _clear_form(); _load(); _load_records()
+
+        # 3개 액션 버튼 (우측 정렬)
+        bf = tk.Frame(f, bg='white')
+        bf.grid(row=4, column=0, columnspan=8, pady=(12, 4), sticky='e')
+        color_btn(bf, "실적 등록", _save_new, theme='save').pack(side='right', padx=5)
+        color_btn(bf, "실적 수정", _update, theme='update').pack(side='right', padx=5)
+        color_btn(bf, "실적 삭제", _delete, theme='delete').pack(side='right', padx=5)
+
+        _load()
 
     # ========================================================
     # 품질검사
