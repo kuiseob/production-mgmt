@@ -400,31 +400,64 @@ def color_btn(parent, text, cmd, theme='save', size=14, padx=22, pady=10):
 
 def export_tree_csv(tree, default_name='data', title='데이터 저장'):
     """Treeview 데이터를 CSV로 저장 (모든 페이지 공용 헬퍼)."""
+    import os, csv, traceback
     from tkinter import filedialog, messagebox
-    import csv
-    items = tree.get_children()
+    from datetime import datetime as _dt
+
+    try:
+        items = tree.get_children()
+    except Exception as e:
+        messagebox.showerror(title, f"트리 접근 실패: {e}"); return
+
     if not items:
-        messagebox.showwarning(title, "저장할 데이터가 없습니다.")
+        messagebox.showwarning(title,
+            "저장할 데이터가 없습니다.\n\n먼저 조회 또는 등록을 해주세요.")
         return
-    cols = tree['columns']
+
+    try:
+        cols = list(tree['columns'])
+    except Exception:
+        cols = []
+
     # ID 컬럼(width=0) 제외
     display_cols, display_idx = [], []
     for i, c in enumerate(cols):
         try:
-            if int(tree.column(c, 'width')) > 0:
-                display_cols.append(c)
+            w = tree.column(c, option='width')
+            if w is None or int(w) > 0:
+                display_cols.append(str(c))
                 display_idx.append(i)
         except Exception:
-            display_cols.append(c); display_idx.append(i)
+            display_cols.append(str(c)); display_idx.append(i)
 
-    from datetime import datetime as _dt
-    fname = f"{default_name}_{_dt.now().strftime('%Y%m%d_%H%M%S')}.csv"
-    path = filedialog.asksaveasfilename(
-        defaultextension='.csv',
-        filetypes=[('CSV (Excel)', '*.csv'), ('모든 파일', '*.*')],
-        initialfile=fname,
-        title=title)
-    if not path: return
+    if not display_cols:
+        # 컬럼 정보가 없으면 모든 컬럼 사용
+        display_cols = [str(c) for c in cols]
+        display_idx = list(range(len(cols)))
+
+    # 기본 파일명: 영문 prefix + 한글 부제 (한글이 시스템에 따라 깨질 수 있어 영문 fallback)
+    ts = _dt.now().strftime('%Y%m%d_%H%M%S')
+    default_name_safe = str(default_name).replace('/', '_').replace('\\', '_')
+    fname = f"{default_name_safe}_{ts}.csv"
+
+    # 기본 저장 경로: ~/Documents (없으면 home)
+    init_dir = os.path.expanduser('~/Documents')
+    if not os.path.isdir(init_dir):
+        init_dir = os.path.expanduser('~')
+
+    try:
+        path = filedialog.asksaveasfilename(
+            defaultextension='.csv',
+            filetypes=[('CSV (Excel)', '*.csv'), ('모든 파일', '*.*')],
+            initialfile=fname,
+            initialdir=init_dir,
+            title=title)
+    except Exception as e:
+        messagebox.showerror(title, f"파일 다이얼로그 오류:\n{e}"); return
+
+    if not path:
+        return  # 사용자가 취소
+
     try:
         with open(path, 'w', newline='', encoding='utf-8-sig') as f:
             w = csv.writer(f)
@@ -432,14 +465,30 @@ def export_tree_csv(tree, default_name='data', title='데이터 저장'):
             w.writerow([f"# 생성: {_dt.now().strftime('%Y-%m-%d %H:%M:%S')}"])
             w.writerow([])
             w.writerow(display_cols)
+            count = 0
             for iid in items:
                 vals = tree.item(iid)['values']
-                w.writerow([vals[i] for i in display_idx if i < len(vals)])
+                if not isinstance(vals, (list, tuple)):
+                    vals = [vals]
+                row = []
+                for i in display_idx:
+                    row.append(vals[i] if i < len(vals) else '')
+                w.writerow(row)
+                count += 1
             w.writerow([])
-            w.writerow(['총 행 수', len(items)])
-        messagebox.showinfo(title, f"CSV 파일로 저장되었습니다.\n\n{path}\n\n총 {len(items)}건")
+            w.writerow(['총 행 수', count])
+        messagebox.showinfo(title,
+            f"✓ CSV 파일로 저장되었습니다.\n\n"
+            f"경로: {path}\n"
+            f"총 {count}건\n\n"
+            f"Excel에서 더블클릭으로 열 수 있습니다.")
+    except PermissionError:
+        messagebox.showerror(title,
+            f"저장 권한이 없습니다:\n{path}\n\n"
+            "다른 폴더를 선택하거나 파일이 이미 열려있는지 확인하세요.")
     except Exception as e:
-        messagebox.showerror(title, f"저장 실패:\n{e}")
+        messagebox.showerror(title,
+            f"저장 실패:\n{e}\n\n{traceback.format_exc()[-500:]}")
 
 def make_label(parent, text, bold=False, size=10, color=None, **kw):
     return tk.Label(parent, text=text,
