@@ -1256,11 +1256,12 @@ class ProductionApp:
         # 통일된 컬러 액션 버튼
         btn_row = tk.Frame(f, bg='white')
         btn_row.grid(row=5, column=0, columnspan=8, sticky='e', pady=(12, 0))
-        # 초기화는 맨 우측 (먼저 packing)
-        color_btn(btn_row, "초기화", _clear_form, theme='neutral', size=9, padx=10, pady=5).pack(side='right', padx=(12, 0))
         color_btn(btn_row, "수주 등록", _save_new, theme='save').pack(side='right', padx=5)
         color_btn(btn_row, "수주 수정", _update, theme='update').pack(side='right', padx=5)
         color_btn(btn_row, "수주 삭제", _delete_selected, theme='delete').pack(side='right', padx=5)
+        # 초기화 — 화면 우측 하단
+        _reset_bar = tk.Frame(p, bg=C['bg']); _reset_bar.pack(side='bottom', fill='x', padx=20, pady=8)
+        color_btn(_reset_bar, "초기화", _clear_form, theme='neutral', size=9, padx=10, pady=5).pack(side='right')
         # Esc 키로도 초기화
         self.root.bind('<Escape>', lambda e: _clear_form())
 
@@ -1564,13 +1565,14 @@ class ProductionApp:
             sel_var.set("작업을 선택하세요")
             eq_var.set(''); worker_var.set(''); plan_var.set('')
 
-        # 초기화: 맨 우측
-        color_btn(bf, "초기화", _clear_wo_form, theme='neutral', size=9, padx=10, pady=5).pack(side='right', padx=(12, 0))
         color_btn(bf, "배정 저장", _assign, theme='save').pack(side='left', padx=4)
         color_btn(bf, "작업 시작", _start, theme='action').pack(side='left', padx=4)
         color_btn(bf, "작업 완료", _complete, theme='update').pack(side='left', padx=4)
         color_btn(bf, "WO 수정", _wo_modify, theme='update').pack(side='left', padx=4)
         color_btn(bf, "WO 삭제", _wo_delete, theme='delete').pack(side='left', padx=4)
+        # 초기화 — 화면 우측 하단
+        _reset_bar = tk.Frame(p, bg=C['bg']); _reset_bar.pack(side='bottom', fill='x', padx=20, pady=8)
+        color_btn(_reset_bar, "초기화", _clear_wo_form, theme='neutral', size=9, padx=10, pady=5).pack(side='right')
         self.root.bind('<Escape>', lambda e: _clear_wo_form())
 
     # ========================================================
@@ -1759,10 +1761,12 @@ class ProductionApp:
         # 3개 액션 버튼 (우측 정렬)
         bf = tk.Frame(f, bg='white')
         bf.grid(row=4, column=0, columnspan=8, pady=(12, 4), sticky='e')
-        color_btn(bf, "초기화", _clear_form, theme='neutral', size=9, padx=10, pady=5).pack(side='right', padx=(12, 0))
         color_btn(bf, "실적 등록", _save_new, theme='save').pack(side='right', padx=5)
         color_btn(bf, "실적 수정", _update, theme='update').pack(side='right', padx=5)
         color_btn(bf, "실적 삭제", _delete, theme='delete').pack(side='right', padx=5)
+        # 초기화 — 화면 우측 하단
+        _reset_bar = tk.Frame(p, bg=C['bg']); _reset_bar.pack(side='bottom', fill='x', padx=20, pady=8)
+        color_btn(_reset_bar, "초기화", _clear_form, theme='neutral', size=9, padx=10, pady=5).pack(side='right')
         self.root.bind('<Escape>', lambda e: _clear_form())
 
         _load()
@@ -1973,10 +1977,11 @@ class ProductionApp:
         # 3개 액션 버튼
         bf = tk.Frame(f, bg='white')
         bf.grid(row=6, column=0, columnspan=8, pady=(12, 4), sticky='e')
-        color_btn(bf, "초기화", _clear_form, theme='neutral', size=9, padx=10, pady=5).pack(side='right', padx=(12, 0))
         color_btn(bf, "검사 결과 저장", _save_new, theme='save').pack(side='right', padx=5)
         color_btn(bf, "검사 수정", _update, theme='update').pack(side='right', padx=5)
         color_btn(bf, "검사 삭제", _delete, theme='delete').pack(side='right', padx=5)
+        _reset_bar = tk.Frame(p, bg=C['bg']); _reset_bar.pack(side='bottom', fill='x', padx=20, pady=8)
+        color_btn(_reset_bar, "초기화", _clear_form, theme='neutral', size=9, padx=10, pady=5).pack(side='right')
         self.root.bind('<Escape>', lambda e: _clear_form())
 
         _load()
@@ -2160,10 +2165,11 @@ class ProductionApp:
         # 3개 액션 버튼
         bf = tk.Frame(f, bg='white')
         bf.grid(row=4, column=0, columnspan=8, pady=(12, 4), sticky='e')
-        color_btn(bf, "초기화", _clear_form, theme='neutral', size=9, padx=10, pady=5).pack(side='right', padx=(12, 0))
         color_btn(bf, "출하 등록", _save_new, theme='save').pack(side='right', padx=5)
         color_btn(bf, "출하 수정", _update, theme='update').pack(side='right', padx=5)
         color_btn(bf, "출하 삭제", _delete, theme='delete').pack(side='right', padx=5)
+        _reset_bar = tk.Frame(p, bg=C['bg']); _reset_bar.pack(side='bottom', fill='x', padx=20, pady=8)
+        color_btn(_reset_bar, "초기화", _clear_form, theme='neutral', size=9, padx=10, pady=5).pack(side='right')
         self.root.bind('<Escape>', lambda e: _clear_form())
 
         _load_orders(); _load_ships()
@@ -2982,8 +2988,9 @@ class ProductionApp:
         # 통일된 컬러 액션 버튼 (저장 + 초기화)
         bf = tk.Frame(f, bg='white')
         bf.grid(row=2, column=5, padx=10, pady=4, sticky='e')
-        color_btn(bf, "초기화", _clear_form, theme='neutral', size=9, padx=10, pady=5).pack(side='right', padx=(12, 0))
         color_btn(bf, "품목 저장", _save, theme='save').pack(side='right', padx=4)
+        _reset_bar = tk.Frame(p, bg=C['bg']); _reset_bar.pack(side='bottom', fill='x', padx=20, pady=8)
+        color_btn(_reset_bar, "초기화", _clear_form, theme='neutral', size=9, padx=10, pady=5).pack(side='right')
         self.root.bind('<Escape>', lambda e: _clear_form())
 
         _load()
@@ -3147,10 +3154,11 @@ class ProductionApp:
         btn_row.grid(row=2, column=0, columnspan=8, sticky='ew', pady=(12, 0))
 
         # 통일된 컬러 액션 버튼
-        color_btn(btn_row, "초기화", _clear_form, theme='neutral', size=9, padx=10, pady=5).pack(side='right', padx=(12, 0))
         color_btn(btn_row, "고객사 등록", _save_new, theme='save').pack(side='right', padx=5)
         color_btn(btn_row, "고객사 수정", _update, theme='update').pack(side='right', padx=5)
         color_btn(btn_row, "고객사 삭제", _delete, theme='delete').pack(side='right', padx=5)
+        _reset_bar = tk.Frame(p, bg=C['bg']); _reset_bar.pack(side='bottom', fill='x', padx=20, pady=8)
+        color_btn(_reset_bar, "초기화", _clear_form, theme='neutral', size=9, padx=10, pady=5).pack(side='right')
         self.root.bind('<Escape>', lambda e: _clear_form())
 
         _load()
@@ -3199,8 +3207,9 @@ class ProductionApp:
 
         bf = tk.Frame(f, bg='white')
         bf.grid(row=1, column=6, padx=10, pady=4, sticky='e')
-        color_btn(bf, "초기화", _clear_form, theme='neutral', size=9, padx=10, pady=5).pack(side='right', padx=(12, 0))
         color_btn(bf, "설비 저장", _save, theme='save').pack(side='right', padx=4)
+        _reset_bar = tk.Frame(p, bg=C['bg']); _reset_bar.pack(side='bottom', fill='x', padx=20, pady=8)
+        color_btn(_reset_bar, "초기화", _clear_form, theme='neutral', size=9, padx=10, pady=5).pack(side='right')
         self.root.bind('<Escape>', lambda e: _clear_form())
         _load()
 
