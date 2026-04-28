@@ -3041,17 +3041,6 @@ class ProductionApp:
                                   font=('Malgun Gothic', 11))
         kind_combo.pack(side='left', padx=2)
 
-        # 빠른 기간 버튼
-        def _quick(days):
-            from_var.set((datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d'))
-            to_var.set(datetime.now().strftime('%Y-%m-%d'))
-            _query()
-        for label, days in [('오늘', 0), ('7일', 7), ('30일', 30), ('90일', 90)]:
-            tk.Button(ctrl, text=label, font=('Malgun Gothic', 9, 'bold'),
-                      bg='#ECEFF1', fg='#37474F', relief='flat',
-                      cursor='hand2', padx=10, pady=3,
-                      command=lambda d=days: _quick(d)).pack(side='left', padx=2)
-
         # ── 요약 카드 ──
         sum_frame = tk.Frame(p, bg=C['bg'])
         sum_frame.pack(fill='x', padx=20, pady=(6, 4))
