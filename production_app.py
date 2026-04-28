@@ -2301,6 +2301,7 @@ class ProductionApp:
         _card("거래명세서",   self._rpt_invoice)
         _card("설비별 가동", self._rpt_equipment)
         _card("📊 그래프 분석", self._rpt_graph)
+        _card("💾 DB → PDF 백업", self._rpt_db_backup)
 
         tk.Frame(p, bg=C['border'], height=1).pack(fill='x', padx=20, pady=4)
         make_label(p, " 미리보기", bold=True, size=10, bg=C['bg']).pack(anchor='w', padx=22)
@@ -2466,6 +2467,146 @@ class ProductionApp:
     # ========================================================
     # 그래프 분석
     # ========================================================
+    def _rpt_db_backup(self):
+        """전체 DB를 PDF로 백업 (EXE/스크립트와 같은 폴더에 저장)."""
+        import subprocess, tempfile, html as _html, platform
+        from datetime import datetime as _dt
+
+        # 저장 위치: EXE 옆 (frozen) 또는 production.db 옆
+        if getattr(sys, 'frozen', False):
+            base = os.path.dirname(sys.executable)
+        else:
+            base = os.path.dirname(os.path.abspath(__file__))
+
+        ts = _dt.now().strftime('%Y%m%d_%H%M')
+        pdf_path = os.path.join(base, f"DB_백업_{ts}.pdf")
+
+        # 한글 라벨 매핑
+        LABELS = {
+            'orders': '📋 수주', 'work_orders': '🔧 작업지시',
+            'production_records': '⚙️ 생산실적', 'inspections': '🔍 품질검사',
+            'shipments': '🚚 출하', 'customers': '🏢 고객사',
+            'items': '📦 품목', 'equipments': '🏭 설비', 'users': '👤 사용자',
+        }
+        ORDER = ['orders', 'work_orders', 'production_records', 'inspections',
+                 'shipments', 'customers', 'items', 'equipments', 'users']
+
+        def _safe(v):
+            if v is None: return ''
+            s = str(v)
+            if len(s) > 80: s = s[:78] + '..'
+            return _html.escape(s)
+
+        try:
+            total = sum(self.db.query(f"SELECT COUNT(*) FROM {t}")[0][0] for t in ORDER)
+        except Exception as e:
+            messagebox.showerror("DB 백업", f"DB 읽기 실패:\n{e}"); return
+
+        now_str = _dt.now().strftime('%Y-%m-%d %H:%M:%S')
+        CSS = """
+@page { size: A4; margin: 14mm 12mm; }
+body { font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+       font-size: 9.5pt; line-height: 1.4; color: #222; }
+.cover { text-align:center; margin: 80px 0 60px; }
+.cover h1 { color:#00695C; font-size: 28pt; margin: 0; }
+.cover h2 { color:#37474F; font-size: 16pt; margin: 12px 0; font-weight: normal; }
+.cover .meta { color:#78909C; font-size: 10pt; margin-top: 20px; line-height: 1.8; }
+.section { page-break-before: always; margin-bottom: 18px; }
+.section:first-of-type { page-break-before: auto; }
+h2.tname { color:#00695C; border-bottom: 3px solid #00695C; padding-bottom: 6px;
+           font-size: 16pt; margin: 16px 0 6px; }
+.cnt { color:#FF6F00; font-weight: bold; font-size: 11pt; margin-left: 8px; }
+table { border-collapse: collapse; width: 100%; margin: 8px 0;
+        font-size: 8pt; page-break-inside: avoid; }
+th { background:#00695C; color:white; padding: 5px 6px; text-align:center; font-size: 8.5pt; }
+td { border: 1px solid #CFD8DC; padding: 4px 6px; vertical-align: top; }
+tbody tr:nth-child(even) { background:#F5F7F8; }
+.no-data { color:#999; font-style: italic; padding: 8px; }
+"""
+        parts = [f"""<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>SEO JIN PRECISION DB 백업</title>
+<style>{CSS}</style></head><body>
+<div class="cover">
+  <h1>SEO JIN PRECISION CO.</h1>
+  <h2>생산관리 시스템 — DB 전체 백업</h2>
+  <div class="meta">
+    파일: production.db<br>생성일시: {now_str}<br>
+    총 {total:,} 행 / {len(ORDER)} 테이블
+  </div>
+</div>"""]
+
+        c = self.db.conn.cursor()
+        for tname in ORDER:
+            label = LABELS[tname]
+            cols = [r[1] for r in c.execute(f"PRAGMA table_info({tname})")]
+            rows = self.db.query(f"SELECT * FROM {tname} ORDER BY rowid")
+            parts.append(f'<div class="section"><h2 class="tname">{label}<span class="cnt">{len(rows):,} 행</span></h2>')
+            if not rows:
+                parts.append('<div class="no-data">데이터 없음</div></div>')
+                continue
+            parts.append('<table><thead><tr>')
+            for col in cols: parts.append(f'<th>{_safe(col)}</th>')
+            parts.append('</tr></thead><tbody>')
+            for r in rows:
+                parts.append('<tr>')
+                for i, col in enumerate(cols):
+                    parts.append(f'<td>{_safe(r[i])}</td>')
+                parts.append('</tr>')
+            parts.append('</tbody></table></div>')
+        parts.append('</body></html>')
+
+        # HTML → PDF (Chrome 헤드리스)
+        tmp = tempfile.NamedTemporaryFile(suffix='.html', delete=False, mode='w', encoding='utf-8')
+        tmp.write('\n'.join(parts)); tmp.close()
+
+        chrome_paths = [
+            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+            r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+            r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+            r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+            r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+        ]
+        chrome = next((p for p in chrome_paths if os.path.isfile(p)), None)
+
+        if not chrome:
+            # Chrome/Edge 없으면 HTML을 PDF 위치 옆에 저장하고 안내
+            html_path = os.path.join(base, f"DB_백업_{ts}.html")
+            with open(html_path, 'w', encoding='utf-8') as f:
+                f.write('\n'.join(parts))
+            messagebox.showinfo("DB 백업",
+                f"Chrome/Edge가 없어 HTML로 저장했습니다.\n\n"
+                f"{html_path}\n\n"
+                f"브라우저로 열어 Ctrl+P로 PDF 저장 가능합니다.")
+            try: webbrowser.open(f'file://{html_path}')
+            except: pass
+            return
+
+        try:
+            subprocess.run([chrome, "--headless", "--disable-gpu",
+                            "--no-pdf-header-footer", "--no-margins",
+                            f"--print-to-pdf={pdf_path}",
+                            f"file://{tmp.name}"],
+                           capture_output=True, timeout=60)
+        except Exception as e:
+            messagebox.showerror("DB 백업", f"PDF 생성 실패:\n{e}"); return
+
+        if os.path.isfile(pdf_path):
+            messagebox.showinfo("DB 백업 완료",
+                f"✓ PDF로 저장되었습니다.\n\n"
+                f"위치: {pdf_path}\n\n"
+                f"총 {total:,} 행 / {len(ORDER)} 테이블")
+            # 자동으로 열기
+            try:
+                if platform.system() == 'Windows':
+                    os.startfile(pdf_path)
+                elif platform.system() == 'Darwin':
+                    subprocess.run(['open', pdf_path])
+                else:
+                    subprocess.run(['xdg-open', pdf_path])
+            except: pass
+        else:
+            messagebox.showerror("DB 백업", "PDF 생성 실패. Chrome 실행 권한을 확인하세요.")
+
     def _rpt_graph(self):
         if not HAS_MPL:
             messagebox.showerror("matplotlib 미설치",
