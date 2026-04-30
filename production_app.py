@@ -3475,46 +3475,125 @@ tbody tr:nth-child(even) { background:#F5F7F8; }
     # ========================================================
     def _pg_equipments(self):
         p = self.page_area
-        page_header(p, "설비 관리", "  CNC 설비 등록")
+        page_header(p, "설비 관리", "  CNC 설비 — 추가 / 수정 / 삭제")
 
         f = tk.Frame(p, bg='white', padx=20, pady=12); f.pack(fill='x', padx=20, pady=12)
         vs = {k: tk.StringVar() for k in ('code','name','process','spec','status')}
+        es = {}
         vs['process'].set('일반CNC'); vs['status'].set('가동')
+        edit_id = [None]
 
         def _lbl(r,c,t): make_label(f,t,size=9,color=C['secondary'],bg='white').grid(row=r,column=c,sticky='w',padx=6,pady=3)
 
-        _lbl(0,0,"코드 *");   make_entry(f, vs['code'], 12).grid(row=0,column=1,padx=4)
-        _lbl(0,2,"설비명 *"); make_entry(f, vs['name'], 24).grid(row=0,column=3,padx=4)
-        _lbl(0,4,"공정 *");   make_combo(f, vs['process'], PROCESSES, width=12).grid(row=0,column=5,padx=4)
-        _lbl(1,0,"생산품목");  make_entry(f, vs['spec'], 30).grid(row=1,column=1,columnspan=3,padx=4,pady=4,sticky='w')
-        _lbl(1,4,"상태");     make_combo(f, vs['status'], ['가동','정비','정지'], width=10).grid(row=1,column=5,padx=4)
+        _lbl(0,0,"코드 *")
+        es['code'] = make_entry(f, vs['code'], 12); es['code'].grid(row=0,column=1,padx=4)
+        _lbl(0,2,"설비명 *")
+        es['name'] = make_entry(f, vs['name'], 24); es['name'].grid(row=0,column=3,padx=4)
+        _lbl(0,4,"공정 *")
+        es['process'] = make_combo(f, vs['process'], PROCESSES, width=12); es['process'].grid(row=0,column=5,padx=4)
+        _lbl(1,0,"생산품목")
+        es['spec'] = make_entry(f, vs['spec'], 30); es['spec'].grid(row=1,column=1,columnspan=3,padx=4,pady=4,sticky='w')
+        _lbl(1,4,"상태")
+        es['status'] = make_combo(f, vs['status'], ['가동','정비','정지'], width=10); es['status'].grid(row=1,column=5,padx=4)
+
+        def _val(key):
+            try:
+                v = es[key].get()
+                if v: return v.strip()
+            except: pass
+            return (vs[key].get() or '').strip()
 
         wrap = tk.Frame(p, bg=C['bg']); wrap.pack(fill='both', expand=True, padx=20, pady=6)
-        cols = ('코드','설비명','공정','생산품목','상태')
-        tree = make_tree(wrap, cols, [100, 220, 100, 280, 80], height=16)
+        cols = ('EID','코드','설비명','공정','생산품목','상태')
+        tree = make_tree(wrap, cols, [0, 100, 220, 100, 280, 80], height=16)
+        tree.column('EID', width=0, stretch=False)
 
         def _load():
-            rows = self.db.query("SELECT code,name,process,spec,status FROM equipments WHERE active=1 ORDER BY code")
-            fill_tree(tree, rows, lambda i, r: 'even' if i%2 else '')
+            rows = self.db.query("SELECT id,code,name,process,spec,status FROM equipments WHERE active=1 ORDER BY code")
+            def tag(i, r):
+                if r[5] == '정지': return 'fail_tag'
+                if r[5] == '정비': return 'urgent_tag'
+                return 'even' if i%2 else ''
+            fill_tree(tree, rows, tag)
 
-        def _save():
-            if not vs['code'].get() or not vs['name'].get():
-                messagebox.showerror("오류", "코드/설비명은 필수입니다."); return
-            self.db.execute("""
-                INSERT OR REPLACE INTO equipments(code,name,process,spec,status)
-                VALUES(?,?,?,?,?)
-            """, (vs['code'].get(), vs['name'].get(), vs['process'].get(),
-                  vs['spec'].get(), vs['status'].get()))
-            for k in ('code','name','spec'): vs[k].set('')
-            _load()
+        def _on_select(e=None):
+            s = tree.selection()
+            if not s: return
+            v = tree.item(s[0])['values']
+            edit_id[0] = v[0]
+            vs['code'].set(str(v[1])); vs['name'].set(str(v[2]))
+            vs['process'].set(str(v[3])); vs['spec'].set(str(v[4]))
+            vs['status'].set(str(v[5]))
+        tree.bind('<<TreeviewSelect>>', _on_select)
 
         def _clear_form():
+            edit_id[0] = None
             for k in vs: vs[k].set('')
             vs['process'].set('일반CNC'); vs['status'].set('가동')
+            try: tree.selection_remove(tree.selection())
+            except: pass
 
+        def _save_new():
+            if edit_id[0] is not None:
+                if not messagebox.askyesno("확인", "현재 수정 모드입니다.\n신규 추가로 전환할까요?"):
+                    return
+                _clear_form(); return
+            code = _val('code'); name = _val('name')
+            if not code or not name:
+                messagebox.showerror("오류", "코드/설비명은 필수입니다."); return
+            dup = self.db.query("SELECT id FROM equipments WHERE code=? AND active=1", (code,))
+            if dup:
+                messagebox.showerror("중복", f"코드 [{code}] 가 이미 존재합니다.\n수정하려면 목록에서 선택 후 '설비 수정' 버튼을 사용하세요.")
+                return
+            try:
+                self.db.execute("""
+                    INSERT INTO equipments(code,name,process,spec,status)
+                    VALUES(?,?,?,?,?)
+                """, (code, name, _val('process'), _val('spec'), _val('status') or '가동'))
+            except Exception as e:
+                messagebox.showerror("저장 실패", f"DB 오류: {e}"); return
+            messagebox.showinfo("완료", f"설비 [{code}] {name} 추가 완료!")
+            _clear_form(); _load()
+
+        def _update():
+            if edit_id[0] is None:
+                messagebox.showwarning("수정", "수정할 설비를 목록에서 선택하세요."); return
+            code = _val('code'); name = _val('name')
+            if not code or not name:
+                messagebox.showerror("오류", "코드/설비명은 필수입니다."); return
+            if not messagebox.askyesno("확인", f"설비 [{code}] {name} 정보를 수정하시겠습니까?"):
+                return
+            self.db.execute("""
+                UPDATE equipments SET code=?, name=?, process=?, spec=?, status=?
+                WHERE id=?
+            """, (code, name, _val('process'), _val('spec'), _val('status'), edit_id[0]))
+            messagebox.showinfo("완료", "설비 수정 완료!")
+            _clear_form(); _load()
+
+        def _delete():
+            if edit_id[0] is None:
+                messagebox.showwarning("삭제", "삭제할 설비를 목록에서 선택하세요."); return
+            # 사용 중인 작업지시 확인
+            used_wo = self.db.query("SELECT COUNT(*) FROM work_orders WHERE equipment_id=?", (edit_id[0],))[0][0]
+            used_pr = self.db.query("SELECT COUNT(*) FROM production_records WHERE equipment_id=?", (edit_id[0],))[0][0]
+            warn = ""
+            if used_wo or used_pr:
+                warn = f"\n\n⚠ 연관 데이터: 작업지시 {used_wo}건 / 생산실적 {used_pr}건\n   삭제해도 이력은 보존됩니다."
+            code = vs['code'].get(); name = vs['name'].get()
+            if not messagebox.askyesno("삭제 확인",
+                f"설비 [{code}] {name} 를 삭제(비활성화)하시겠습니까?{warn}"):
+                return
+            # 소프트 삭제
+            self.db.execute("UPDATE equipments SET active=0 WHERE id=?", (edit_id[0],))
+            messagebox.showinfo("삭제 완료", f"설비 [{code}] 가 삭제되었습니다.")
+            _clear_form(); _load()
+
+        # 3개 액션 버튼
         bf = tk.Frame(f, bg='white')
-        bf.grid(row=1, column=6, padx=10, pady=4, sticky='e')
-        color_btn(bf, "설비 저장", _save, theme='save').pack(side='right', padx=4)
+        bf.grid(row=2, column=0, columnspan=8, padx=4, pady=(10, 4), sticky='e')
+        color_btn(bf, "설비 추가", _save_new, theme='save').pack(side='right', padx=4)
+        color_btn(bf, "설비 수정", _update, theme='update').pack(side='right', padx=4)
+        color_btn(bf, "설비 삭제", _delete, theme='delete').pack(side='right', padx=4)
         _load()
 
     # ========================================================
