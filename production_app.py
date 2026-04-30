@@ -508,13 +508,13 @@ def make_label(parent, text, bold=False, size=10, color=None, **kw):
                     fg=color or C['text'], **kw)
 
 def make_entry(parent, var, width=18, **kw):
-    """입력 칸 — 흰색 배경 + 청록 테두리로 명확히 표시."""
+    """입력 칸 — 흰색 배경 + 진한 테두리로 명확히 표시."""
     return tk.Entry(parent, textvariable=var,
                     font=('Malgun Gothic', 11),
                     relief='solid', bd=1,
                     bg='white', fg='#212121',
-                    highlightthickness=1,
-                    highlightbackground='#B0BEC5',
+                    highlightthickness=2,
+                    highlightbackground='#90A4AE',
                     highlightcolor='#00695C',
                     insertbackground='#00695C',
                     width=width, **kw)
@@ -536,6 +536,21 @@ def setup_treeview_style():
                     background=C['primary'], foreground='white',
                     font=('Malgun Gothic', 9, 'bold'), relief='flat')
     style.map('PM.Treeview', background=[('selected', C['primary_light'])])
+    # Combobox 명확한 테두리
+    style.configure('TCombobox',
+                    fieldbackground='white',
+                    background='white',
+                    foreground='#212121',
+                    bordercolor='#90A4AE',
+                    arrowcolor='#00695C',
+                    borderwidth=2,
+                    relief='solid',
+                    padding=4)
+    style.map('TCombobox',
+              fieldbackground=[('readonly', 'white'), ('focus', 'white')],
+              bordercolor=[('focus', '#00695C')],
+              lightcolor=[('focus', '#00695C')],
+              darkcolor=[('focus', '#00695C')])
 
 def make_tree(parent, cols, widths, height=12):
     frame = tk.Frame(parent, bg=C['white'])
@@ -1172,13 +1187,17 @@ class ProductionApp:
             return s
 
         def _make_date_box(parent, default_dt):
-            """단일 Entry 날짜 입력 (포커스 잃을 때 자동 정규화)."""
+            """단일 Entry 날짜 입력 — 명확한 테두리."""
             v = tk.StringVar(value=default_dt.strftime('%Y-%m-%d'))
             ent = tk.Entry(parent, textvariable=v,
                            font=('Malgun Gothic', 12, 'bold'),
                            width=12, justify='center',
-                           bg='#F5F5F5', fg='#263238',
-                           relief='flat', bd=4)
+                           bg='white', fg='#212121',
+                           relief='solid', bd=1,
+                           highlightthickness=2,
+                           highlightbackground='#90A4AE',
+                           highlightcolor='#00695C',
+                           insertbackground='#00695C')
             def _on_focus_out(e=None):
                 v.set(_normalize(v.get()))
             ent.bind('<FocusOut>', _on_focus_out)
