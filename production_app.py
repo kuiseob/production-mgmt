@@ -2302,7 +2302,7 @@ class ProductionApp:
             card.pack(side='left', expand=True, fill='both', padx=8)
             make_label(card, title, bold=True, size=12, color=C['primary'], bg='white').pack(pady=4)
             color_btn(card, "미리보기 / 인쇄", cmd, theme='export',
-                      size=11, padx=18, pady=8).pack(pady=8)
+                      size=9, padx=14, pady=6).pack(pady=8)
 
         _card("작업지시서",   self._rpt_workorder)
         _card("생산일보",     self._rpt_daily)
