@@ -122,6 +122,9 @@ class DB:
             contact TEXT DEFAULT '',
             phone TEXT DEFAULT '',
             email TEXT DEFAULT '',
+            zipcode TEXT DEFAULT '',
+            address TEXT DEFAULT '',
+            address_detail TEXT DEFAULT '',
             active INTEGER DEFAULT 1
         );
         CREATE TABLE IF NOT EXISTS items (
@@ -219,6 +222,11 @@ class DB:
             FOREIGN KEY(order_id) REFERENCES orders(id)
         );
         """)
+        # 마이그레이션: customers에 주소 컬럼 없으면 추가
+        existing = [r[1] for r in c.execute("PRAGMA table_info(customers)")]
+        for col in ('zipcode', 'address', 'address_detail'):
+            if col not in existing:
+                c.execute(f"ALTER TABLE customers ADD COLUMN {col} TEXT DEFAULT ''")
         self.conn.commit()
 
     def _seed(self):
@@ -501,6 +509,100 @@ def export_tree_csv(tree, default_name='data', title='데이터 저장'):
     except Exception as e:
         messagebox.showerror(title,
             f"저장 실패:\n{e}\n\n{traceback.format_exc()[-500:]}")
+
+# ──────────────────────────────────────
+# Daum 우편번호/주소 검색 (무료, 키 발급 불필요)
+# ──────────────────────────────────────
+def search_address(callback):
+    """브라우저로 Daum 우편번호 팝업 → 결과를 콜백으로 전달.
+
+    callback(zipcode, address): 사용자가 주소를 선택했을 때 호출됨.
+    """
+    import webbrowser, tempfile, json, threading
+    from http.server import HTTPServer, BaseHTTPRequestHandler
+    from urllib.parse import urlparse, parse_qs, unquote
+
+    # 빈 포트 자동 선택
+    import socket
+    s = socket.socket(); s.bind(('localhost', 0)); port = s.getsockname()[1]; s.close()
+
+    HTML = f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>주소 검색 - SEO JIN PRECISION</title>
+<style>
+  body {{ font-family: 'Malgun Gothic', sans-serif; margin:0; padding:0;
+         background: #ECEFF1; }}
+  #wrap {{ width: 100%; height: 100vh; }}
+  .done {{ text-align:center; padding:80px 20px; color:#00695C; }}
+  .done h2 {{ font-size: 22pt; }}
+</style></head>
+<body>
+<div id="wrap"></div>
+<script src="https://t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js"></script>
+<script>
+new daum.Postcode({{
+  oncomplete: function(data) {{
+    var addr = data.roadAddress || data.jibunAddress;
+    var zip  = data.zonecode;
+    var q = '?zip=' + encodeURIComponent(zip) + '&addr=' + encodeURIComponent(addr);
+    fetch('http://localhost:{port}/result' + q)
+      .then(() => {{
+        document.getElementById('wrap').innerHTML =
+          '<div class="done"><h2>✓ 주소가 선택되었습니다</h2>' +
+          '<p>우편번호: <b>' + zip + '</b></p>' +
+          '<p>주소: <b>' + addr + '</b></p>' +
+          '<p style="margin-top:30px;color:#999">이 창은 자동으로 닫힙니다...</p></div>';
+        setTimeout(() => window.close(), 1500);
+      }});
+  }},
+  width: '100%', height: '100%'
+}}).embed(document.getElementById('wrap'));
+</script>
+</body></html>"""
+
+    received = {'done': False}
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            try:
+                u = urlparse(self.path)
+                if u.path == '/result':
+                    q = parse_qs(u.query)
+                    zip_ = unquote(q.get('zip', [''])[0])
+                    addr = unquote(q.get('addr', [''])[0])
+                    received['done'] = True
+                    received['zip'] = zip_
+                    received['addr'] = addr
+                    # 메인 스레드에서 콜백 호출
+                    try:
+                        import tkinter as _tk
+                        # callback이 tk 위젯 변수를 set하므로 메인 스레드에서 안전하게 호출
+                        callback(zip_, addr)
+                    except Exception as e:
+                        print(f"[주소 콜백 오류] {e}")
+                self.send_response(200)
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(b'OK')
+            except Exception as e:
+                self.send_response(500); self.end_headers()
+                self.wfile.write(str(e).encode())
+        def log_message(self, *a): pass
+
+    server = HTTPServer(('localhost', port), Handler)
+
+    def _serve():
+        # 단일 요청만 처리하고 종료 (timeout 60초)
+        server.timeout = 60
+        try: server.handle_request()
+        except: pass
+        server.server_close()
+
+    threading.Thread(target=_serve, daemon=True).start()
+
+    f = tempfile.NamedTemporaryFile('w', suffix='.html', delete=False, encoding='utf-8')
+    f.write(HTML); f.close()
+    webbrowser.open(f'file://{f.name}')
+
 
 def make_label(parent, text, bold=False, size=10, color=None, **kw):
     return tk.Label(parent, text=text,
@@ -3315,15 +3417,67 @@ tbody tr:nth-child(even) { background:#F5F7F8; }
         page_header(p, "고객사 관리", "  거래처 등록 / 수정 / 삭제")
 
         f = tk.Frame(p, bg='white', padx=20, pady=12); f.pack(fill='x', padx=20, pady=12)
-        vs = {k: tk.StringVar() for k in ('code','name','contact','phone','email')}
+        vs = {k: tk.StringVar() for k in
+              ('code','name','contact','phone','email','zipcode','address','address_detail')}
         entries = {}  # 직접 .get() 호출용 백업
-        labels = [("코드 *","code",12), ("회사명 *","name",24), ("담당자","contact",14),
-                  ("연락처","phone",16), ("이메일","email",22)]
-        for i, (lbl, key, w) in enumerate(labels):
-            make_label(f, lbl, size=9, color=C['secondary'], bg='white').grid(row=i//3, column=(i%3)*2, sticky='w', padx=6, pady=3)
+
+        def _lbl(r, c, t):
+            make_label(f, t, size=9, color=C['secondary'], bg='white').grid(
+                row=r, column=c, sticky='w', padx=6, pady=4)
+
+        def _ent(r, c, key, w, **gridkw):
             e = make_entry(f, vs[key], w)
-            e.grid(row=i//3, column=(i%3)*2+1, padx=4)
+            e.grid(row=r, column=c, padx=4, pady=4, **gridkw)
             entries[key] = e
+            return e
+
+        # 1행: 코드 / 회사명 / 담당자
+        _lbl(0, 0, "코드 *");      _ent(0, 1, 'code', 12)
+        _lbl(0, 2, "회사명 *");    _ent(0, 3, 'name', 22)
+        _lbl(0, 4, "담당자");      _ent(0, 5, 'contact', 14)
+
+        # 2행: 연락처 / 이메일
+        _lbl(1, 0, "연락처");      _ent(1, 1, 'phone', 16)
+        _lbl(1, 2, "이메일");      _ent(1, 3, 'email', 32, columnspan=3, sticky='w')
+
+        # 3행: 우편번호 + [주소 검색] 버튼 / 주소
+        _lbl(2, 0, "우편번호")
+        zip_e = make_entry(f, vs['zipcode'], 8)
+        zip_e.grid(row=2, column=1, padx=4, pady=4, sticky='w')
+        entries['zipcode'] = zip_e
+
+        # 주소 검색 버튼 (작은 파랑 버튼)
+        def _open_address_search():
+            def _on_done(zipcode, address):
+                # tk 메인 스레드에서 안전하게 set
+                self.root.after(0, lambda: (
+                    vs['zipcode'].set(zipcode),
+                    vs['address'].set(address),
+                    entries['address_detail'].focus_set()
+                ))
+            try:
+                search_address(_on_done)
+                # 안내
+                self.root.after(500, lambda: messagebox.showinfo(
+                    "주소 검색",
+                    "브라우저가 열렸습니다.\n주소를 검색/선택하면 자동으로 입력됩니다."))
+            except Exception as e:
+                messagebox.showerror("주소 검색", f"오류: {e}")
+
+        color_btn(f, "🔍 주소 검색", _open_address_search,
+                  theme='action', size=9, padx=10, pady=4).grid(
+            row=2, column=2, padx=4, sticky='w')
+
+        _lbl(2, 3, "도로명주소")
+        addr_e = make_entry(f, vs['address'], 36)
+        addr_e.grid(row=2, column=4, columnspan=3, padx=4, pady=4, sticky='w')
+        entries['address'] = addr_e
+
+        # 4행: 상세주소
+        _lbl(3, 0, "상세주소")
+        ad_e = make_entry(f, vs['address_detail'], 50)
+        ad_e.grid(row=3, column=1, columnspan=5, padx=4, pady=4, sticky='w')
+        entries['address_detail'] = ad_e
 
         def _val(key):
             """StringVar/Entry 양쪽에서 값 읽기 (IME 미커밋 대비)."""
@@ -3343,11 +3497,15 @@ tbody tr:nth-child(even) { background:#F5F7F8; }
         mode_lbl = _NoLbl()
 
         wrap = tk.Frame(p, bg=C['bg']); wrap.pack(fill='both', expand=True, padx=20, pady=6)
-        cols = ('코드','회사명','담당자','연락처','이메일')
-        tree = make_tree(wrap, cols, [100, 220, 130, 150, 200], height=16)
+        cols = ('코드','회사명','담당자','연락처','이메일','우편번호','주소')
+        tree = make_tree(wrap, cols, [80, 180, 90, 130, 180, 80, 280], height=14)
 
         def _load():
-            rows = self.db.query("SELECT code,name,contact,phone,email FROM customers WHERE active=1 ORDER BY code")
+            rows = self.db.query("""SELECT code,name,contact,phone,email,
+                                           COALESCE(zipcode,''),
+                                           COALESCE(address,'') ||
+                                           CASE WHEN COALESCE(address_detail,'')!='' THEN ' '||address_detail ELSE '' END
+                                    FROM customers WHERE active=1 ORDER BY code""")
             fill_tree(tree, rows, lambda i, r: 'even' if i%2 else '')
 
         def _clear_form():
@@ -3405,9 +3563,11 @@ tbody tr:nth-child(even) { background:#F5F7F8; }
             # 신규 등록
             try:
                 self.db.execute("""
-                    INSERT INTO customers(code,name,contact,phone,email)
-                    VALUES(?,?,?,?,?)
-                """, (code, name, contact, phone, email))
+                    INSERT INTO customers(code,name,contact,phone,email,
+                                          zipcode,address,address_detail)
+                    VALUES(?,?,?,?,?,?,?,?)
+                """, (code, name, contact, phone, email,
+                      _val('zipcode'), _val('address'), _val('address_detail')))
             except Exception as e:
                 messagebox.showerror("등록 실패", f"DB 오류: {e}"); return
             messagebox.showinfo("등록 완료", f"고객사 [{name}] 가 등록되었습니다.")
@@ -3425,9 +3585,12 @@ tbody tr:nth-child(even) { background:#F5F7F8; }
             if not messagebox.askyesno("확인", f"고객사 [{name}] 의 내용을 수정하시겠습니까?"):
                 return
             self.db.execute("""
-                UPDATE customers SET code=?, name=?, contact=?, phone=?, email=?
+                UPDATE customers SET code=?, name=?, contact=?, phone=?, email=?,
+                                     zipcode=?, address=?, address_detail=?
                 WHERE id=?
-            """, (code, name, _val('contact'), _val('phone'), _val('email'), edit_id[0]))
+            """, (code, name, _val('contact'), _val('phone'), _val('email'),
+                  _val('zipcode'), _val('address'), _val('address_detail'),
+                  edit_id[0]))
             messagebox.showinfo("완료", "고객사 수정 완료!")
             _clear_form(); _load()
 
@@ -3450,20 +3613,25 @@ tbody tr:nth-child(even) { background:#F5F7F8; }
             s = tree.selection()
             if not s: return
             v = tree.item(s[0])['values']
-            row = self.db.query("SELECT id,code,name,contact,phone,email FROM customers WHERE code=?", (v[0],))
+            row = self.db.query("""SELECT id,code,name,contact,phone,email,
+                                          COALESCE(zipcode,''), COALESCE(address,''),
+                                          COALESCE(address_detail,'')
+                                   FROM customers WHERE code=?""", (v[0],))
             if not row: return
             r = row[0]
             edit_id[0] = r[0]
             vs['code'].set(r[1] or '');     vs['name'].set(r[2] or '')
             vs['contact'].set(r[3] or '');  vs['phone'].set(r[4] or '')
             vs['email'].set(r[5] or '')
+            vs['zipcode'].set(r[6] or ''); vs['address'].set(r[7] or '')
+            vs['address_detail'].set(r[8] or '')
             mode_lbl.config(text=f"기존 고객 [{r[2]}] 수정 중",
                             fg='#E65100', bg='#FFF3E0')
         tree.bind('<<TreeviewSelect>>', _on_select)
 
         # 4개 버튼 — Frame+Label 방식으로 macOS에서도 색상 표시
         btn_row = tk.Frame(f, bg='white')
-        btn_row.grid(row=2, column=0, columnspan=8, sticky='ew', pady=(12, 0))
+        btn_row.grid(row=4, column=0, columnspan=8, sticky='ew', pady=(12, 0))
 
         # 통일된 컬러 액션 버튼
         color_btn(btn_row, "고객사 등록", _save_new, theme='save').pack(side='right', padx=5)
