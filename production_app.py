@@ -511,107 +511,116 @@ def export_tree_csv(tree, default_name='data', title='데이터 저장'):
             f"저장 실패:\n{e}\n\n{traceback.format_exc()[-500:]}")
 
 # ──────────────────────────────────────
-# Daum 우편번호/주소 검색 (무료, 키 발급 불필요)
+# Daum 우편번호/주소 검색 (클립보드 방식 — 가장 안정)
 # ──────────────────────────────────────
-def search_address(callback):
-    """브라우저로 Daum 우편번호 팝업 → 결과를 콜백으로 전달."""
-    import webbrowser, tempfile, threading, socket
-    from http.server import HTTPServer, BaseHTTPRequestHandler
-    from urllib.parse import urlparse, parse_qs, unquote
+def search_address(callback, root):
+    """브라우저로 Daum 우편번호 팝업 → 클립보드로 결과 받기 → 콜백.
 
-    # 빈 포트 자동 선택
-    s = socket.socket(); s.bind(('localhost', 0)); port = s.getsockname()[1]; s.close()
-    print(f"[주소검색] 포트 {port} 에서 대기 중...")
+    사용 흐름:
+      1. 브라우저 자동 열림 (Daum 검색)
+      2. 사용자가 주소 클릭 → JS가 자동 클립보드 복사 + 화면에 큰 글씨로 표시
+      3. 앱이 클립보드를 polling 하여 자동 감지
+      4. 우편번호+주소 자동 입력
+    """
+    import webbrowser, tempfile
 
-    HTML = f"""<!DOCTYPE html>
+    HTML = """<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>주소 검색 - SEO JIN PRECISION</title>
 <style>
-  body {{ font-family: 'Malgun Gothic', sans-serif; margin:0; padding:0;
-         background: #ECEFF1; }}
-  #wrap {{ width: 100%; height: 100vh; }}
-  .done {{ text-align:center; padding:80px 20px; color:#00695C; }}
-  .done h2 {{ font-size: 22pt; }}
+  body { font-family: 'Apple SD Gothic Neo','Malgun Gothic',sans-serif;
+         margin:0; padding:0; background:#ECEFF1; }
+  #search { width:100%; height:60vh; }
+  #result { padding:24px; background:white; margin:14px; border-radius:8px;
+            box-shadow:0 2px 6px rgba(0,0,0,0.1); display:none; }
+  #result h2 { color:#00695C; margin:0 0 16px; }
+  .row { font-size:18pt; margin:10px 0; padding:10px 16px;
+         background:#E0F2F1; border-radius:4px; color:#00695C; font-weight:bold; }
+  .info { color:#FF6F00; font-weight:bold; font-size:14pt; margin-top:18px;
+          padding:14px; background:#FFF3E0; border-radius:4px; text-align:center; }
+  button { margin-top:16px; padding:12px 28px; font-size:14pt; font-weight:bold;
+           background:#00695C; color:white; border:none; border-radius:4px;
+           cursor:pointer; }
+  button:hover { background:#004D40; }
 </style></head>
 <body>
-<div id="wrap"></div>
+<div id="search"></div>
+<div id="result">
+  <h2>✓ 선택된 주소 (자동으로 앱에 입력됩니다)</h2>
+  <div class="row">우편번호: <span id="zip"></span></div>
+  <div class="row">주소: <span id="addr"></span></div>
+  <div class="info">📋 자동으로 클립보드에 복사되었습니다.<br>
+       앱으로 돌아가면 자동 입력됩니다 (1~2초 소요)</div>
+  <button onclick="copyAgain()">🔄 다시 복사</button>
+  <button onclick="window.close()">닫기</button>
+</div>
 <script src="https://t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js"></script>
 <script>
-new daum.Postcode({{
-  oncomplete: function(data) {{
+var lastData = null;
+function copyText(t) {
+  // 안전한 클립보드 복사 (HTTPS 아닌 file://에서도 동작)
+  var ta = document.createElement('textarea');
+  ta.value = t; ta.style.position='fixed'; ta.style.opacity=0;
+  document.body.appendChild(ta);
+  ta.focus(); ta.select();
+  try { document.execCommand('copy'); } catch(e) {}
+  document.body.removeChild(ta);
+}
+function copyAgain() {
+  if (lastData) copyText('SEOJIN_ADDR|' + lastData.zip + '|' + lastData.addr);
+}
+new daum.Postcode({
+  oncomplete: function(data) {
     var addr = data.roadAddress || data.jibunAddress;
     var zip  = data.zonecode;
-    // fetch 대신 페이지 이동 (file:// → http:// CORS 회피)
-    window.location.href = 'http://localhost:{port}/result?zip='
-        + encodeURIComponent(zip) + '&addr=' + encodeURIComponent(addr);
-  }},
+    lastData = {zip: zip, addr: addr};
+    // 클립보드에 식별 가능한 형식으로 복사: "SEOJIN_ADDR|zip|addr"
+    copyText('SEOJIN_ADDR|' + zip + '|' + addr);
+    document.getElementById('search').style.display = 'none';
+    document.getElementById('result').style.display = 'block';
+    document.getElementById('zip').textContent = zip;
+    document.getElementById('addr').textContent = addr;
+  },
   width: '100%', height: '100%'
-}}).embed(document.getElementById('wrap'));
+}).embed(document.getElementById('search'));
 </script>
 </body></html>"""
-
-    DONE_HTML = """<!DOCTYPE html><html><head><meta charset='utf-8'>
-<title>완료</title><style>
-body{font-family:'Malgun Gothic';text-align:center;padding:80px 20px;
-     color:#00695C;background:#E0F2F1;}
-h1{font-size:28pt;margin:0 0 20px}
-p{font-size:14pt;color:#37474F}
-.zip{display:inline-block;background:white;padding:10px 18px;border-radius:4px;
-     font-size:18pt;font-weight:bold;color:#00695C;margin:8px}
-.addr{font-size:13pt;color:#263238;margin-top:12px}
-.tip{margin-top:40px;color:#90A4AE;font-size:11pt}
-</style></head><body>
-<h1>✓ 주소가 입력되었습니다</h1>
-<div class="zip">우편번호: %ZIP%</div>
-<div class="addr">%ADDR%</div>
-<p class="tip">생산관리 프로그램으로 돌아가세요.<br>이 창은 닫으셔도 됩니다.</p>
-<script>setTimeout(()=>window.close(), 2000);</script>
-</body></html>"""
-
-    class Handler(BaseHTTPRequestHandler):
-        def do_GET(self):
-            u = urlparse(self.path)
-            print(f"[주소검색] 요청: {self.path}")
-            if u.path == '/result':
-                q = parse_qs(u.query)
-                zip_ = unquote(q.get('zip', [''])[0])
-                addr = unquote(q.get('addr', [''])[0])
-                print(f"[주소검색] 수신: zip={zip_}, addr={addr}")
-                # 메인 스레드에서 콜백 호출
-                try:
-                    callback(zip_, addr)
-                    print(f"[주소검색] 콜백 호출 완료")
-                except Exception as e:
-                    print(f"[주소검색] 콜백 오류: {e}")
-                # 완료 페이지 반환
-                self.send_response(200)
-                self.send_header('Content-Type', 'text/html; charset=utf-8')
-                self.send_header('Access-Control-Allow-Origin', '*')
-                self.end_headers()
-                html = DONE_HTML.replace('%ZIP%', zip_).replace('%ADDR%', addr)
-                self.wfile.write(html.encode('utf-8'))
-                # /result 처리 후 서버 종료 신호
-                threading.Thread(target=lambda: (
-                    __import__('time').sleep(2), self.server.shutdown()
-                ), daemon=True).start()
-            else:
-                self.send_response(404); self.end_headers()
-        def log_message(self, *a): pass
-
-    server = HTTPServer(('localhost', port), Handler)
-    server.timeout = 1
-
-    def _serve():
-        try: server.serve_forever()
-        except: pass
-        finally: server.server_close()
-        print("[주소검색] 서버 종료")
-
-    threading.Thread(target=_serve, daemon=True).start()
 
     f = tempfile.NamedTemporaryFile('w', suffix='.html', delete=False, encoding='utf-8')
     f.write(HTML); f.close()
     print(f"[주소검색] HTML: {f.name}")
     webbrowser.open(f'file://{f.name}')
+
+    # 클립보드 polling (10초간, 0.5초마다)
+    poll_state = {'count': 0, 'last_seen': ''}
+
+    def _poll():
+        poll_state['count'] += 1
+        try:
+            txt = root.clipboard_get()
+        except Exception:
+            txt = ''
+        # 식별자로 시작하는 새 클립보드 내용 감지
+        if txt and txt.startswith('SEOJIN_ADDR|') and txt != poll_state['last_seen']:
+            poll_state['last_seen'] = txt
+            try:
+                _, zip_, addr = txt.split('|', 2)
+                print(f"[주소검색] 클립보드 감지: zip={zip_}, addr={addr}")
+                callback(zip_, addr)
+                # 클립보드 정리 (선택적)
+                try:
+                    root.clipboard_clear()
+                    root.clipboard_append(addr)  # 주소만 남김
+                except: pass
+                return  # polling 중단
+            except Exception as e:
+                print(f"[주소검색] 파싱 오류: {e}")
+        # 60초까지 polling (120회)
+        if poll_state['count'] < 120:
+            root.after(500, _poll)
+        else:
+            print("[주소검색] 타임아웃 — polling 중단")
+
+    root.after(1000, _poll)  # 1초 후 시작
 
 
 def make_label(parent, text, bold=False, size=10, color=None, **kw):
@@ -3461,13 +3470,12 @@ tbody tr:nth-child(even) { background:#F5F7F8; }
                 self.root.after(0, lambda: (
                     vs['zipcode'].set(zipcode),
                     vs['address'].set(address),
-                    entries['address_detail'].focus_set()
+                    entries['address_detail'].focus_set(),
+                    messagebox.showinfo("주소 입력 완료",
+                        f"우편번호: {zipcode}\n주소: {address}\n\n상세주소를 추가 입력하세요.")
                 ))
             try:
-                search_address(_on_done)
-                self.root.after(500, lambda: messagebox.showinfo(
-                    "주소 검색",
-                    "브라우저가 열렸습니다.\n주소를 검색/선택하면 자동으로 입력됩니다."))
+                search_address(_on_done, self.root)
             except Exception as e:
                 messagebox.showerror("주소 검색", f"오류: {e}")
 
