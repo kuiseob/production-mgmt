@@ -1157,7 +1157,12 @@ class ProductionApp:
         _lbl(1, 0, "주문번호 *")
         on_entry = tk.Entry(f, textvariable=order_var,
                             font=('Malgun Gothic', 13, 'bold'), width=22,
-                            fg='#00695C', relief='flat', bd=4)
+                            fg='#00695C', bg='white',
+                            relief='solid', bd=1,
+                            highlightthickness=2,
+                            highlightbackground='#90A4AE',
+                            highlightcolor='#00695C',
+                            insertbackground='#00695C')
         on_entry.grid(row=1, column=1, padx=4, pady=4, columnspan=2, sticky='w')
 
         _lbl(1, 3, "고객사 *")
@@ -1791,10 +1796,9 @@ class ProductionApp:
         rtree.bind('<<TreeviewSelect>>', _on_record_select)
 
         make_label(f, "생산실적 입력", bold=True, size=11, color=C['primary'], bg='white').grid(row=0, column=0, columnspan=6, sticky='w')
-        mode_lbl = tk.Label(f, text="신규 실적 입력 중",
-                            font=('Malgun Gothic', 10, 'bold'),
-                            bg='#E8F5E9', fg='#2E7D32', padx=10, pady=3)
-        mode_lbl.grid(row=0, column=6, columnspan=2, sticky='e', padx=8)
+        class _NoLbl:
+            def config(self, **kw): pass
+        mode_lbl = _NoLbl()
 
         make_label(f, "선택:", size=9, color=C['secondary'], bg='white').grid(row=1, column=0, sticky='w', pady=4)
         tk.Label(f, textvariable=sel_var, font=('Malgun Gothic', 10, 'bold'),
@@ -1993,10 +1997,9 @@ class ProductionApp:
         itree.bind('<<TreeviewSelect>>', _on_insp_select)
 
         make_label(f, "검사 결과 등록", bold=True, size=11, color=C['primary'], bg='white').grid(row=0, column=0, columnspan=6, sticky='w')
-        mode_lbl = tk.Label(f, text="신규 검사 등록 중",
-                            font=('Malgun Gothic', 10, 'bold'),
-                            bg='#E8F5E9', fg='#2E7D32', padx=10, pady=3)
-        mode_lbl.grid(row=0, column=6, columnspan=2, sticky='e', padx=8)
+        class _NoLbl:
+            def config(self, **kw): pass
+        mode_lbl = _NoLbl()
 
         make_label(f, "선택:", size=9, color=C['secondary'], bg='white').grid(row=1, column=0, sticky='w', pady=4)
         tk.Label(f, textvariable=sel_var, font=('Malgun Gothic', 10, 'bold'),
@@ -2195,10 +2198,9 @@ class ProductionApp:
         htree.bind('<<TreeviewSelect>>', _on_ship_sel)
 
         make_label(f, "출하 등록", bold=True, size=11, color=C['primary'], bg='white').grid(row=0, column=0, columnspan=6, sticky='w')
-        mode_lbl = tk.Label(f, text="신규 출하 등록 중",
-                            font=('Malgun Gothic', 10, 'bold'),
-                            bg='#E8F5E9', fg='#2E7D32', padx=10, pady=3)
-        mode_lbl.grid(row=0, column=6, columnspan=2, sticky='e', padx=8)
+        class _NoLbl:
+            def config(self, **kw): pass
+        mode_lbl = _NoLbl()
 
         make_label(f, "선택:", size=9, color=C['secondary'], bg='white').grid(row=1, column=0, sticky='w', pady=4)
         tk.Label(f, textvariable=sel_var, font=('Malgun Gothic', 10, 'bold'),
