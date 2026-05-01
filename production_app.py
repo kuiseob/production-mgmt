@@ -3440,16 +3440,14 @@ tbody tr:nth-child(even) { background:#F5F7F8; }
         _lbl(1, 0, "연락처");      _ent(1, 1, 'phone', 16)
         _lbl(1, 2, "이메일");      _ent(1, 3, 'email', 32, columnspan=3, sticky='w')
 
-        # 3행: 우편번호 + [주소 검색] 버튼 / 주소
+        # 3행: 우편번호 + [주소 검색] 버튼
         _lbl(2, 0, "우편번호")
-        zip_e = make_entry(f, vs['zipcode'], 8)
+        zip_e = make_entry(f, vs['zipcode'], 10)
         zip_e.grid(row=2, column=1, padx=4, pady=4, sticky='w')
         entries['zipcode'] = zip_e
 
-        # 주소 검색 버튼 (작은 파랑 버튼)
         def _open_address_search():
             def _on_done(zipcode, address):
-                # tk 메인 스레드에서 안전하게 set
                 self.root.after(0, lambda: (
                     vs['zipcode'].set(zipcode),
                     vs['address'].set(address),
@@ -3457,7 +3455,6 @@ tbody tr:nth-child(even) { background:#F5F7F8; }
                 ))
             try:
                 search_address(_on_done)
-                # 안내
                 self.root.after(500, lambda: messagebox.showinfo(
                     "주소 검색",
                     "브라우저가 열렸습니다.\n주소를 검색/선택하면 자동으로 입력됩니다."))
@@ -3466,17 +3463,18 @@ tbody tr:nth-child(even) { background:#F5F7F8; }
 
         color_btn(f, "🔍 주소 검색", _open_address_search,
                   theme='action', size=9, padx=10, pady=4).grid(
-            row=2, column=2, padx=4, sticky='w')
+            row=2, column=2, padx=4, pady=4, sticky='w')
 
-        _lbl(2, 3, "도로명주소")
-        addr_e = make_entry(f, vs['address'], 36)
-        addr_e.grid(row=2, column=4, columnspan=3, padx=4, pady=4, sticky='w')
+        # 4행: 도로명주소 (좌측 정렬, 충분한 폭)
+        _lbl(3, 0, "도로명주소")
+        addr_e = make_entry(f, vs['address'], 60)
+        addr_e.grid(row=3, column=1, columnspan=5, padx=4, pady=4, sticky='w')
         entries['address'] = addr_e
 
-        # 4행: 상세주소
-        _lbl(3, 0, "상세주소")
-        ad_e = make_entry(f, vs['address_detail'], 50)
-        ad_e.grid(row=3, column=1, columnspan=5, padx=4, pady=4, sticky='w')
+        # 5행: 상세주소
+        _lbl(4, 0, "상세주소")
+        ad_e = make_entry(f, vs['address_detail'], 60)
+        ad_e.grid(row=4, column=1, columnspan=5, padx=4, pady=4, sticky='w')
         entries['address_detail'] = ad_e
 
         def _val(key):
@@ -3631,7 +3629,7 @@ tbody tr:nth-child(even) { background:#F5F7F8; }
 
         # 4개 버튼 — Frame+Label 방식으로 macOS에서도 색상 표시
         btn_row = tk.Frame(f, bg='white')
-        btn_row.grid(row=4, column=0, columnspan=8, sticky='ew', pady=(12, 0))
+        btn_row.grid(row=5, column=0, columnspan=8, sticky='ew', pady=(12, 0))
 
         # 통일된 컬러 액션 버튼
         color_btn(btn_row, "고객사 등록", _save_new, theme='save').pack(side='right', padx=5)
