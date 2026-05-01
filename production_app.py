@@ -511,7 +511,34 @@ def export_tree_csv(tree, default_name='data', title='데이터 저장'):
             f"저장 실패:\n{e}\n\n{traceback.format_exc()[-500:]}")
 
 # ──────────────────────────────────────
-# Daum 우편번호/주소 검색 (클립보드 방식 — 가장 안정)
+# 시스템 클립보드 읽기 (macOS/Windows/Linux 호환)
+# ──────────────────────────────────────
+def get_clipboard():
+    """시스템 클립보드 텍스트 읽기 (Tk보다 신뢰성 높음)."""
+    import subprocess
+    try:
+        if sys.platform == 'darwin':
+            r = subprocess.run(['pbpaste'], capture_output=True, text=True, timeout=2)
+            return r.stdout
+        elif sys.platform == 'win32':
+            r = subprocess.run(['powershell', '-command', 'Get-Clipboard'],
+                               capture_output=True, text=True, timeout=2)
+            return r.stdout.strip()
+        else:
+            try:
+                r = subprocess.run(['xclip', '-selection', 'clipboard', '-o'],
+                                   capture_output=True, text=True, timeout=2)
+                return r.stdout
+            except: pass
+            r = subprocess.run(['xsel', '-b'], capture_output=True, text=True, timeout=2)
+            return r.stdout
+    except Exception as e:
+        print(f"[clipboard] {e}")
+        return ''
+
+
+# ──────────────────────────────────────
+# Daum 우편번호/주소 검색
 # ──────────────────────────────────────
 def search_address(callback, root):
     """브라우저로 Daum 우편번호 팝업 → 클립보드로 결과 받기 → 콜백.
@@ -532,53 +559,60 @@ def search_address(callback, root):
   #search { width:100%; height:60vh; }
   #result { padding:24px; background:white; margin:14px; border-radius:8px;
             box-shadow:0 2px 6px rgba(0,0,0,0.1); display:none; }
-  #result h2 { color:#00695C; margin:0 0 16px; }
-  .row { font-size:18pt; margin:10px 0; padding:10px 16px;
-         background:#E0F2F1; border-radius:4px; color:#00695C; font-weight:bold; }
-  .info { color:#FF6F00; font-weight:bold; font-size:14pt; margin-top:18px;
-          padding:14px; background:#FFF3E0; border-radius:4px; text-align:center; }
-  button { margin-top:16px; padding:12px 28px; font-size:14pt; font-weight:bold;
-           background:#00695C; color:white; border:none; border-radius:4px;
-           cursor:pointer; }
-  button:hover { background:#004D40; }
+  #result h2 { color:#00695C; margin:0 0 12px; font-size:18pt; }
+  textarea#data { width:100%; height:60px; font-size:16pt; font-weight:bold;
+                  color:#00695C; padding:14px; border:3px solid #00695C;
+                  border-radius:6px; resize:none; box-sizing:border-box;
+                  background:#E0F2F1; }
+  .step { margin:14px 0; padding:14px; background:#FFF3E0;
+          border-left:5px solid #FF6F00; font-size:14pt; }
+  .step b { color:#E65100; font-size:16pt; }
+  button.copy { padding:18px 40px; font-size:18pt; font-weight:bold;
+                background:#FF6F00; color:white; border:none; border-radius:6px;
+                cursor:pointer; margin:10px 0; }
+  button.copy:hover { background:#E65100; }
+  button.copy:active { background:#BF360C; }
+  .ok { color:#2E7D32; font-weight:bold; font-size:18pt; display:none;
+        text-align:center; padding:20px; background:#E8F5E9; border-radius:6px;
+        margin-top:14px; }
 </style></head>
 <body>
 <div id="search"></div>
 <div id="result">
-  <h2>✓ 선택된 주소 (자동으로 앱에 입력됩니다)</h2>
-  <div class="row">우편번호: <span id="zip"></span></div>
-  <div class="row">주소: <span id="addr"></span></div>
-  <div class="info">📋 자동으로 클립보드에 복사되었습니다.<br>
-       앱으로 돌아가면 자동 입력됩니다 (1~2초 소요)</div>
-  <button onclick="copyAgain()">🔄 다시 복사</button>
-  <button onclick="window.close()">닫기</button>
+  <h2>✓ 선택된 주소</h2>
+  <textarea id="data" readonly></textarea>
+  <div class="step">
+    <b>STEP 1</b> 아래 큰 버튼을 클릭해 클립보드에 복사
+  </div>
+  <button class="copy" onclick="doCopy()">📋  클립보드에 복사하기</button>
+  <div class="step">
+    <b>STEP 2</b> 생산관리 앱으로 돌아가서<br>
+    <b>STEP 3</b> "📥 클립보드에서 가져오기" 버튼 클릭
+  </div>
+  <div id="ok" class="ok">✓ 복사되었습니다! 앱으로 돌아가세요.</div>
 </div>
 <script src="https://t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js"></script>
 <script>
-var lastData = null;
-function copyText(t) {
-  // 안전한 클립보드 복사 (HTTPS 아닌 file://에서도 동작)
-  var ta = document.createElement('textarea');
-  ta.value = t; ta.style.position='fixed'; ta.style.opacity=0;
-  document.body.appendChild(ta);
-  ta.focus(); ta.select();
-  try { document.execCommand('copy'); } catch(e) {}
-  document.body.removeChild(ta);
-}
-function copyAgain() {
-  if (lastData) copyText('SEOJIN_ADDR|' + lastData.zip + '|' + lastData.addr);
+function doCopy() {
+  var t = document.getElementById('data');
+  t.select();
+  t.setSelectionRange(0, 99999);
+  try {
+    document.execCommand('copy');
+    document.getElementById('ok').style.display = 'block';
+  } catch(e) {
+    alert('복사 실패: 텍스트를 직접 선택해 Cmd+C로 복사하세요.');
+  }
 }
 new daum.Postcode({
   oncomplete: function(data) {
     var addr = data.roadAddress || data.jibunAddress;
     var zip  = data.zonecode;
-    lastData = {zip: zip, addr: addr};
-    // 클립보드에 식별 가능한 형식으로 복사: "SEOJIN_ADDR|zip|addr"
-    copyText('SEOJIN_ADDR|' + zip + '|' + addr);
     document.getElementById('search').style.display = 'none';
     document.getElementById('result').style.display = 'block';
-    document.getElementById('zip').textContent = zip;
-    document.getElementById('addr').textContent = addr;
+    document.getElementById('data').value = 'SEOJIN_ADDR|' + zip + '|' + addr;
+    // 자동 1회 시도
+    setTimeout(doCopy, 100);
   },
   width: '100%', height: '100%'
 }).embed(document.getElementById('search'));
@@ -590,37 +624,27 @@ new daum.Postcode({
     print(f"[주소검색] HTML: {f.name}")
     webbrowser.open(f'file://{f.name}')
 
-    # 클립보드 polling (10초간, 0.5초마다)
+    # 백그라운드 polling: 시스템 클립보드(pbpaste)를 0.7초마다 30초간 확인
     poll_state = {'count': 0, 'last_seen': ''}
 
     def _poll():
         poll_state['count'] += 1
-        try:
-            txt = root.clipboard_get()
-        except Exception:
-            txt = ''
-        # 식별자로 시작하는 새 클립보드 내용 감지
+        txt = get_clipboard()
         if txt and txt.startswith('SEOJIN_ADDR|') and txt != poll_state['last_seen']:
             poll_state['last_seen'] = txt
             try:
                 _, zip_, addr = txt.split('|', 2)
-                print(f"[주소검색] 클립보드 감지: zip={zip_}, addr={addr}")
-                callback(zip_, addr)
-                # 클립보드 정리 (선택적)
-                try:
-                    root.clipboard_clear()
-                    root.clipboard_append(addr)  # 주소만 남김
-                except: pass
-                return  # polling 중단
+                print(f"[주소검색] 자동 감지: zip={zip_}, addr={addr.strip()}")
+                callback(zip_.strip(), addr.strip())
+                return
             except Exception as e:
                 print(f"[주소검색] 파싱 오류: {e}")
-        # 60초까지 polling (120회)
-        if poll_state['count'] < 120:
+        if poll_state['count'] < 60:  # 30초
             root.after(500, _poll)
         else:
-            print("[주소검색] 타임아웃 — polling 중단")
+            print("[주소검색] 타임아웃")
 
-    root.after(1000, _poll)  # 1초 후 시작
+    root.after(1500, _poll)
 
 
 def make_label(parent, text, bold=False, size=10, color=None, **kw):
@@ -3465,23 +3489,44 @@ tbody tr:nth-child(even) { background:#F5F7F8; }
         zip_e.grid(row=2, column=1, padx=4, pady=4, sticky='w')
         entries['zipcode'] = zip_e
 
+        def _on_addr_done(zipcode, address):
+            self.root.after(0, lambda: (
+                vs['zipcode'].set(zipcode),
+                vs['address'].set(address),
+                entries['address_detail'].focus_set(),
+                messagebox.showinfo("주소 입력 완료",
+                    f"우편번호: {zipcode}\n주소: {address}\n\n상세주소를 추가 입력하세요.")
+            ))
+
         def _open_address_search():
-            def _on_done(zipcode, address):
-                self.root.after(0, lambda: (
-                    vs['zipcode'].set(zipcode),
-                    vs['address'].set(address),
-                    entries['address_detail'].focus_set(),
-                    messagebox.showinfo("주소 입력 완료",
-                        f"우편번호: {zipcode}\n주소: {address}\n\n상세주소를 추가 입력하세요.")
-                ))
             try:
-                search_address(_on_done, self.root)
+                search_address(_on_addr_done, self.root)
             except Exception as e:
                 messagebox.showerror("주소 검색", f"오류: {e}")
 
-        color_btn(f, "🔍 주소 검색", _open_address_search,
-                  theme='action', size=9, padx=10, pady=4).grid(
-            row=2, column=2, padx=4, pady=4, sticky='w')
+        def _paste_from_clipboard():
+            """클립보드에서 직접 가져오기 (자동 감지 실패 시 수동 트리거)."""
+            txt = get_clipboard()
+            if not txt:
+                messagebox.showwarning("클립보드", "클립보드가 비어있습니다."); return
+            if not txt.startswith('SEOJIN_ADDR|'):
+                messagebox.showerror("클립보드",
+                    f"주소 데이터가 없습니다.\n\n현재 클립보드:\n{txt[:100]}\n\n"
+                    "브라우저에서 주소를 선택한 후 '📋 클립보드에 복사하기' 버튼을 누르고 다시 시도하세요.")
+                return
+            try:
+                _, zip_, addr = txt.split('|', 2)
+                _on_addr_done(zip_.strip(), addr.strip())
+            except Exception as e:
+                messagebox.showerror("클립보드", f"파싱 오류: {e}")
+
+        # 주소 검색 + 클립보드 가져오기 두 버튼
+        addr_btns = tk.Frame(f, bg='white')
+        addr_btns.grid(row=2, column=2, padx=4, pady=4, sticky='w')
+        color_btn(addr_btns, "🔍 주소 검색", _open_address_search,
+                  theme='action', size=9, padx=10, pady=4).pack(side='left', padx=2)
+        color_btn(addr_btns, "📥 클립보드에서 가져오기", _paste_from_clipboard,
+                  theme='export', size=9, padx=10, pady=4).pack(side='left', padx=2)
 
         # 4행: 도로명주소 (좌측 정렬, 충분한 폭)
         _lbl(3, 0, "도로명주소")
