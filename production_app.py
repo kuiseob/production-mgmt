@@ -3489,44 +3489,103 @@ tbody tr:nth-child(even) { background:#F5F7F8; }
         zip_e.grid(row=2, column=1, padx=4, pady=4, sticky='w')
         entries['zipcode'] = zip_e
 
-        def _on_addr_done(zipcode, address):
-            self.root.after(0, lambda: (
-                vs['zipcode'].set(zipcode),
-                vs['address'].set(address),
-                entries['address_detail'].focus_set(),
+        def _open_address_dialog():
+            """주소 검색 다이얼로그: 브라우저 검색 + 앱 내 입력창."""
+            import webbrowser
+            # 1) 백그라운드에서 Daum 우편번호 검색 페이지 열기 (참고용)
+            webbrowser.open('https://www.juso.go.kr/openIndexPage.do')
+
+            # 2) 앱 내 입력 다이얼로그
+            dlg = tk.Toplevel(self.root)
+            dlg.title("주소 입력")
+            dlg.geometry("520x320")
+            dlg.configure(bg='white')
+            dlg.transient(self.root); dlg.grab_set()
+
+            # 화면 중앙
+            dlg.update_idletasks()
+            x = (dlg.winfo_screenwidth() - 520) // 2
+            y = (dlg.winfo_screenheight() - 320) // 2
+            dlg.geometry(f"520x320+{x}+{y}")
+
+            tk.Label(dlg, text="🔍 주소 입력",
+                     font=('Malgun Gothic', 16, 'bold'),
+                     fg='#00695C', bg='white').pack(pady=(18, 4))
+            tk.Label(dlg,
+                     text="브라우저에서 검색한 주소를 아래에 입력하세요\n(브라우저가 자동으로 열렸습니다)",
+                     font=('Malgun Gothic', 10),
+                     fg='#546E7A', bg='white').pack()
+
+            ff = tk.Frame(dlg, bg='white', padx=24, pady=14); ff.pack(fill='x')
+            zip_v = tk.StringVar(); addr_v = tk.StringVar()
+            # 클립보드에서 자동 감지 (예전 형식 호환)
+            cb = get_clipboard()
+            if cb and cb.startswith('SEOJIN_ADDR|'):
+                try:
+                    _, z, a = cb.split('|', 2)
+                    zip_v.set(z.strip()); addr_v.set(a.strip())
+                except: pass
+
+            tk.Label(ff, text="우편번호 *", font=('Malgun Gothic', 10, 'bold'),
+                     fg='#37474F', bg='white').grid(row=0, column=0, sticky='w', pady=6)
+            zip_e = make_entry(ff, zip_v, 12)
+            zip_e.grid(row=0, column=1, padx=10, pady=6, sticky='w')
+
+            tk.Label(ff, text="도로명주소 *", font=('Malgun Gothic', 10, 'bold'),
+                     fg='#37474F', bg='white').grid(row=1, column=0, sticky='w', pady=6)
+            addr_e = make_entry(ff, addr_v, 48)
+            addr_e.grid(row=1, column=1, padx=10, pady=6, sticky='w')
+
+            zip_e.focus_set()
+
+            def _ok():
+                z = (zip_e.get() or zip_v.get()).strip()
+                a = (addr_e.get() or addr_v.get()).strip()
+                if not z or not a:
+                    messagebox.showerror("입력 오류",
+                        "우편번호와 도로명주소를 모두 입력하세요.", parent=dlg)
+                    return
+                vs['zipcode'].set(z)
+                vs['address'].set(a)
+                dlg.destroy()
+                entries['address_detail'].focus_set()
                 messagebox.showinfo("주소 입력 완료",
-                    f"우편번호: {zipcode}\n주소: {address}\n\n상세주소를 추가 입력하세요.")
-            ))
+                    f"우편번호: {z}\n주소: {a}\n\n상세주소를 추가 입력하세요.")
 
-        def _open_address_search():
-            try:
-                search_address(_on_addr_done, self.root)
-            except Exception as e:
-                messagebox.showerror("주소 검색", f"오류: {e}")
+            def _paste():
+                """클립보드에서 자동 가져오기."""
+                txt = get_clipboard()
+                if txt and txt.startswith('SEOJIN_ADDR|'):
+                    try:
+                        _, z, a = txt.split('|', 2)
+                        zip_v.set(z.strip()); addr_v.set(a.strip())
+                        return
+                    except: pass
+                # 클립보드에 일반 텍스트면 도로명주소로
+                if txt:
+                    addr_v.set(txt.strip().split('\n')[0])
+                    messagebox.showinfo("클립보드",
+                        "클립보드 내용을 도로명주소로 채웠습니다.\n우편번호는 직접 입력하세요.",
+                        parent=dlg)
 
-        def _paste_from_clipboard():
-            """클립보드에서 직접 가져오기 (자동 감지 실패 시 수동 트리거)."""
-            txt = get_clipboard()
-            if not txt:
-                messagebox.showwarning("클립보드", "클립보드가 비어있습니다."); return
-            if not txt.startswith('SEOJIN_ADDR|'):
-                messagebox.showerror("클립보드",
-                    f"주소 데이터가 없습니다.\n\n현재 클립보드:\n{txt[:100]}\n\n"
-                    "브라우저에서 주소를 선택한 후 '📋 클립보드에 복사하기' 버튼을 누르고 다시 시도하세요.")
-                return
-            try:
-                _, zip_, addr = txt.split('|', 2)
-                _on_addr_done(zip_.strip(), addr.strip())
-            except Exception as e:
-                messagebox.showerror("클립보드", f"파싱 오류: {e}")
+            btns = tk.Frame(dlg, bg='white'); btns.pack(pady=14)
+            color_btn(btns, "📋 클립보드에서 붙여넣기", _paste,
+                      theme='export', size=10, padx=12, pady=6).pack(side='left', padx=4)
+            color_btn(btns, "확인", _ok,
+                      theme='save', size=11, padx=20, pady=8).pack(side='left', padx=4)
+            color_btn(btns, "취소", dlg.destroy,
+                      theme='neutral', size=10, padx=14, pady=6).pack(side='left', padx=4)
 
-        # 주소 검색 + 클립보드 가져오기 두 버튼
-        addr_btns = tk.Frame(f, bg='white')
-        addr_btns.grid(row=2, column=2, padx=4, pady=4, sticky='w')
-        color_btn(addr_btns, "🔍 주소 검색", _open_address_search,
-                  theme='action', size=9, padx=10, pady=4).pack(side='left', padx=2)
-        color_btn(addr_btns, "📥 클립보드에서 가져오기", _paste_from_clipboard,
-                  theme='export', size=9, padx=10, pady=4).pack(side='left', padx=2)
+            tk.Label(dlg,
+                     text="💡 도로명주소 검색 사이트(juso.go.kr)에서 주소를 복사한 후\n"
+                          "[클립보드에서 붙여넣기] 또는 직접 입력 → [확인]",
+                     font=('Malgun Gothic', 9), fg='#90A4AE',
+                     bg='white', justify='center').pack(pady=(0, 12))
+
+        # 주소 검색 버튼
+        color_btn(f, "🔍 주소 입력", _open_address_dialog,
+                  theme='action', size=9, padx=10, pady=4).grid(
+            row=2, column=2, padx=4, pady=4, sticky='w')
 
         # 4행: 도로명주소 (좌측 정렬, 충분한 폭)
         _lbl(3, 0, "도로명주소")
