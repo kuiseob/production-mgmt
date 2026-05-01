@@ -3493,10 +3493,10 @@ tbody tr:nth-child(even) { background:#F5F7F8; }
         es['name'] = make_entry(f, vs['name'], 24); es['name'].grid(row=0,column=3,padx=4)
         _lbl(0,4,"공정 *")
         es['process'] = make_combo(f, vs['process'], PROCESSES, width=12); es['process'].grid(row=0,column=5,padx=4)
-        _lbl(1,0,"생산품목")
-        es['spec'] = make_entry(f, vs['spec'], 30); es['spec'].grid(row=1,column=1,columnspan=3,padx=4,pady=4,sticky='w')
-        _lbl(1,4,"상태")
-        es['status'] = make_combo(f, vs['status'], ['가동','정비','정지'], width=10); es['status'].grid(row=1,column=5,padx=4)
+        _lbl(1,0,"상태")
+        es['status'] = make_combo(f, vs['status'], ['가동','정비','정지'], width=10); es['status'].grid(row=1,column=1,padx=4)
+        # 호환성을 위해 spec entry는 안 보이게 유지 (기존 _val('spec') 호출 호환)
+        es['spec'] = make_entry(f, vs['spec'], 1)  # 안 그려짐
 
         def _val(key):
             try:
@@ -3506,15 +3506,15 @@ tbody tr:nth-child(even) { background:#F5F7F8; }
             return (vs[key].get() or '').strip()
 
         wrap = tk.Frame(p, bg=C['bg']); wrap.pack(fill='both', expand=True, padx=20, pady=6)
-        cols = ('EID','코드','설비명','공정','생산품목','상태')
-        tree = make_tree(wrap, cols, [0, 100, 220, 100, 280, 80], height=16)
+        cols = ('EID','코드','설비명','공정','상태')
+        tree = make_tree(wrap, cols, [0, 120, 280, 140, 100], height=16)
         tree.column('EID', width=0, stretch=False)
 
         def _load():
-            rows = self.db.query("SELECT id,code,name,process,spec,status FROM equipments WHERE active=1 ORDER BY code")
+            rows = self.db.query("SELECT id,code,name,process,status FROM equipments WHERE active=1 ORDER BY code")
             def tag(i, r):
-                if r[5] == '정지': return 'fail_tag'
-                if r[5] == '정비': return 'urgent_tag'
+                if r[4] == '정지': return 'fail_tag'
+                if r[4] == '정비': return 'urgent_tag'
                 return 'even' if i%2 else ''
             fill_tree(tree, rows, tag)
 
@@ -3524,8 +3524,11 @@ tbody tr:nth-child(even) { background:#F5F7F8; }
             v = tree.item(s[0])['values']
             edit_id[0] = v[0]
             vs['code'].set(str(v[1])); vs['name'].set(str(v[2]))
-            vs['process'].set(str(v[3])); vs['spec'].set(str(v[4]))
-            vs['status'].set(str(v[5]))
+            vs['process'].set(str(v[3]))
+            vs['status'].set(str(v[4]))
+            # spec(생산품목)은 DB에서 직접 조회 (UI에 없음)
+            row = self.db.query("SELECT spec FROM equipments WHERE id=?", (v[0],))
+            vs['spec'].set(row[0][0] if row else '')
         tree.bind('<<TreeviewSelect>>', _on_select)
 
         def _clear_form():
