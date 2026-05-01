@@ -514,17 +514,14 @@ def export_tree_csv(tree, default_name='data', title='데이터 저장'):
 # Daum 우편번호/주소 검색 (무료, 키 발급 불필요)
 # ──────────────────────────────────────
 def search_address(callback):
-    """브라우저로 Daum 우편번호 팝업 → 결과를 콜백으로 전달.
-
-    callback(zipcode, address): 사용자가 주소를 선택했을 때 호출됨.
-    """
-    import webbrowser, tempfile, json, threading
+    """브라우저로 Daum 우편번호 팝업 → 결과를 콜백으로 전달."""
+    import webbrowser, tempfile, threading, socket
     from http.server import HTTPServer, BaseHTTPRequestHandler
     from urllib.parse import urlparse, parse_qs, unquote
 
     # 빈 포트 자동 선택
-    import socket
     s = socket.socket(); s.bind(('localhost', 0)); port = s.getsockname()[1]; s.close()
+    print(f"[주소검색] 포트 {port} 에서 대기 중...")
 
     HTML = f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>주소 검색 - SEO JIN PRECISION</title>
@@ -543,64 +540,77 @@ new daum.Postcode({{
   oncomplete: function(data) {{
     var addr = data.roadAddress || data.jibunAddress;
     var zip  = data.zonecode;
-    var q = '?zip=' + encodeURIComponent(zip) + '&addr=' + encodeURIComponent(addr);
-    fetch('http://localhost:{port}/result' + q)
-      .then(() => {{
-        document.getElementById('wrap').innerHTML =
-          '<div class="done"><h2>✓ 주소가 선택되었습니다</h2>' +
-          '<p>우편번호: <b>' + zip + '</b></p>' +
-          '<p>주소: <b>' + addr + '</b></p>' +
-          '<p style="margin-top:30px;color:#999">이 창은 자동으로 닫힙니다...</p></div>';
-        setTimeout(() => window.close(), 1500);
-      }});
+    // fetch 대신 페이지 이동 (file:// → http:// CORS 회피)
+    window.location.href = 'http://localhost:{port}/result?zip='
+        + encodeURIComponent(zip) + '&addr=' + encodeURIComponent(addr);
   }},
   width: '100%', height: '100%'
 }}).embed(document.getElementById('wrap'));
 </script>
 </body></html>"""
 
-    received = {'done': False}
+    DONE_HTML = """<!DOCTYPE html><html><head><meta charset='utf-8'>
+<title>완료</title><style>
+body{font-family:'Malgun Gothic';text-align:center;padding:80px 20px;
+     color:#00695C;background:#E0F2F1;}
+h1{font-size:28pt;margin:0 0 20px}
+p{font-size:14pt;color:#37474F}
+.zip{display:inline-block;background:white;padding:10px 18px;border-radius:4px;
+     font-size:18pt;font-weight:bold;color:#00695C;margin:8px}
+.addr{font-size:13pt;color:#263238;margin-top:12px}
+.tip{margin-top:40px;color:#90A4AE;font-size:11pt}
+</style></head><body>
+<h1>✓ 주소가 입력되었습니다</h1>
+<div class="zip">우편번호: %ZIP%</div>
+<div class="addr">%ADDR%</div>
+<p class="tip">생산관리 프로그램으로 돌아가세요.<br>이 창은 닫으셔도 됩니다.</p>
+<script>setTimeout(()=>window.close(), 2000);</script>
+</body></html>"""
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
-            try:
-                u = urlparse(self.path)
-                if u.path == '/result':
-                    q = parse_qs(u.query)
-                    zip_ = unquote(q.get('zip', [''])[0])
-                    addr = unquote(q.get('addr', [''])[0])
-                    received['done'] = True
-                    received['zip'] = zip_
-                    received['addr'] = addr
-                    # 메인 스레드에서 콜백 호출
-                    try:
-                        import tkinter as _tk
-                        # callback이 tk 위젯 변수를 set하므로 메인 스레드에서 안전하게 호출
-                        callback(zip_, addr)
-                    except Exception as e:
-                        print(f"[주소 콜백 오류] {e}")
+            u = urlparse(self.path)
+            print(f"[주소검색] 요청: {self.path}")
+            if u.path == '/result':
+                q = parse_qs(u.query)
+                zip_ = unquote(q.get('zip', [''])[0])
+                addr = unquote(q.get('addr', [''])[0])
+                print(f"[주소검색] 수신: zip={zip_}, addr={addr}")
+                # 메인 스레드에서 콜백 호출
+                try:
+                    callback(zip_, addr)
+                    print(f"[주소검색] 콜백 호출 완료")
+                except Exception as e:
+                    print(f"[주소검색] 콜백 오류: {e}")
+                # 완료 페이지 반환
                 self.send_response(200)
+                self.send_header('Content-Type', 'text/html; charset=utf-8')
                 self.send_header('Access-Control-Allow-Origin', '*')
                 self.end_headers()
-                self.wfile.write(b'OK')
-            except Exception as e:
-                self.send_response(500); self.end_headers()
-                self.wfile.write(str(e).encode())
+                html = DONE_HTML.replace('%ZIP%', zip_).replace('%ADDR%', addr)
+                self.wfile.write(html.encode('utf-8'))
+                # /result 처리 후 서버 종료 신호
+                threading.Thread(target=lambda: (
+                    __import__('time').sleep(2), self.server.shutdown()
+                ), daemon=True).start()
+            else:
+                self.send_response(404); self.end_headers()
         def log_message(self, *a): pass
 
     server = HTTPServer(('localhost', port), Handler)
+    server.timeout = 1
 
     def _serve():
-        # 단일 요청만 처리하고 종료 (timeout 60초)
-        server.timeout = 60
-        try: server.handle_request()
+        try: server.serve_forever()
         except: pass
-        server.server_close()
+        finally: server.server_close()
+        print("[주소검색] 서버 종료")
 
     threading.Thread(target=_serve, daemon=True).start()
 
     f = tempfile.NamedTemporaryFile('w', suffix='.html', delete=False, encoding='utf-8')
     f.write(HTML); f.close()
+    print(f"[주소검색] HTML: {f.name}")
     webbrowser.open(f'file://{f.name}')
 
 
