@@ -1244,23 +1244,69 @@ class ProductionApp:
 
         self._sb_btns = {}
         self._sb_meta = {}  # key -> (color, emoji, label)
+        # 섹션별 컨테이너 + 헤더 + 펼침 상태
+        self._sb_sections = {}  # name -> {'container': Frame, 'header': Label,
+                                #          'expanded': bool, 'color': str}
+        current_section = None  # 현재 처리 중인 섹션명
+
+        def _toggle_section(name):
+            sec = self._sb_sections.get(name)
+            if not sec: return
+            sec['expanded'] = not sec['expanded']
+            arrow = '▼' if sec['expanded'] else '▶'
+            sec['header'].config(text=f"  {arrow}  {name}")
+            if sec['expanded']:
+                sec['container'].pack(fill='x', after=sec['hdr_box'])
+            else:
+                sec['container'].pack_forget()
+
         for item in menus:
             if item is None:
                 tk.Frame(sb, bg='#B0BEC5', height=1).pack(fill='x', padx=14, pady=2); continue
-            # 섹션 헤더
+            # 섹션 헤더 (클릭 시 펼침/접힘)
             if isinstance(item, tuple) and item[0] == 'HEADER':
                 _, header_text, header_color = item
-                hdr_box = tk.Frame(sb, bg=header_color, pady=6)
-                hdr_box.pack(fill='x', pady=(8, 4))
-                tk.Label(hdr_box, text=header_text,
-                         font=('Malgun Gothic', 11, 'bold'),
-                         fg='white', bg=header_color).pack()
+                hdr_box = tk.Frame(sb, bg=header_color)
+                hdr_box.pack(fill='x', pady=(8, 0))
+                # 첫 번째(생산관리)만 기본 펼침, 나머지는 접힘
+                expanded_default = (header_text == '생산관리 시스템')
+                arrow = '▼' if expanded_default else '▶'
+                header_lbl = tk.Label(hdr_box,
+                                      text=f"  {arrow}  {header_text}",
+                                      font=('Malgun Gothic', 11, 'bold'),
+                                      fg='white', bg=header_color,
+                                      cursor='hand2', anchor='w',
+                                      pady=8, padx=10)
+                header_lbl.pack(fill='x')
+                # 섹션 컨테이너 (메뉴 아이템들이 들어갈 곳)
+                container = tk.Frame(sb, bg=C['sidebar_bg'])
+                self._sb_sections[header_text] = {
+                    'hdr_box': hdr_box,
+                    'header': header_lbl,
+                    'container': container,
+                    'expanded': expanded_default,
+                    'color': header_color,
+                }
+                if expanded_default:
+                    container.pack(fill='x', after=hdr_box)
+                # 클릭 바인딩
+                header_lbl.bind('<Button-1>', lambda e, n=header_text: _toggle_section(n))
+                hdr_box.bind('<Button-1>', lambda e, n=header_text: _toggle_section(n))
+                # 호버 효과
+                def _h_enter(e, lb=header_lbl, c=header_color):
+                    lb.config(bg='#37474F')
+                def _h_leave(e, lb=header_lbl, c=header_color):
+                    lb.config(bg=c)
+                header_lbl.bind('<Enter>', _h_enter)
+                header_lbl.bind('<Leave>', _h_leave)
+                current_section = container
                 continue
+            # 일반 메뉴 항목 → 현재 섹션 컨테이너에 추가
             key, label, color, emoji = item
             self._sb_meta[key] = (color, emoji, label)
 
-            # 컨테이너: 좌측 컬러 바 + 버튼
-            row = tk.Frame(sb, bg=C['sidebar_bg'])
+            parent = current_section if current_section is not None else sb
+            row = tk.Frame(parent, bg=C['sidebar_bg'])
             row.pack(fill='x', padx=3, pady=0)
 
             bar = tk.Frame(row, bg=C['sidebar_bg'], width=5)
