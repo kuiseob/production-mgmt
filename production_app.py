@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-생산관리 시스템 - SEO JIN PRECISION CO.
+생산 및 외주 (PROD/OUT) 시스템 - SEO JIN PRECISION CO.
 MTO (Make-to-Order) Production Management System
 기계부품 주문생산 관리
 """
@@ -991,7 +991,7 @@ class ProductionApp:
         setup_treeview_style()
 
         self.root = tk.Tk()
-        self.root.title(f"생산관리 시스템 - {COMPANY}")
+        self.root.title(f"생산 및 외주 (PROD/OUT) 시스템 - {COMPANY}")
         self.root.geometry("1340x820")
         self.root.configure(bg=C['bg'])
         self.root.minsize(1100, 680)
@@ -1036,7 +1036,7 @@ class ProductionApp:
         tk.Frame(bg, bg='#80CBC4', height=2, width=320).pack(pady=18)
 
         # 시스템명
-        tk.Label(bg, text="생산관리 시스템",
+        tk.Label(bg, text="생산 및 외주 (PROD/OUT) 시스템",
                  font=('Malgun Gothic', 18, 'bold'),
                  fg='white', bg=C['primary_dark']).pack()
         tk.Label(bg, text="MTO Production Management System",
@@ -1095,7 +1095,7 @@ class ProductionApp:
         logo = tk.Frame(bg, bg=C['primary_dark'], pady=36); logo.pack(fill='x')
         tk.Label(logo, text=COMPANY, font=('Malgun Gothic', 13, 'bold'),
                  fg='#80CBC4', bg=C['primary_dark']).pack()
-        tk.Label(logo, text="생산관리 시스템", font=('Malgun Gothic', 26, 'bold'),
+        tk.Label(logo, text="생산 및 외주 (PROD/OUT) 시스템", font=('Malgun Gothic', 26, 'bold'),
                  fg='white', bg=C['primary_dark']).pack(pady=6)
         tk.Label(logo, text="MTO Production Management System",
                  font=('Malgun Gothic', 11), fg='#B0BEC5', bg=C['primary_dark']).pack()
@@ -1198,7 +1198,7 @@ class ProductionApp:
 
     def _build_header(self):
         hdr = tk.Frame(self.root, bg=C['header_bg'], height=56); hdr.pack(fill='x'); hdr.pack_propagate(False)
-        tk.Label(hdr, text=f"  {COMPANY}  |  생산관리 시스템",
+        tk.Label(hdr, text=f"  {COMPANY}  |  생산 및 외주 (PROD/OUT) 시스템",
                  font=('Malgun Gothic', 14, 'bold'),
                  fg='white', bg=C['header_bg']).pack(side='left', padx=10)
         tk.Label(hdr, text=f"{self.user['name']}  ({self.user['team']})",
@@ -1213,42 +1213,49 @@ class ProductionApp:
 
     def _build_sidebar(self, parent):
         sb = tk.Frame(parent, bg=C['sidebar_bg'], width=285); sb.pack(side='left', fill='y'); sb.pack_propagate(False)
-        # (key, 라벨, 아이콘색, 이모지)
+        # 메뉴 구조:
+        # ('HEADER', '섹션명', 색상)  → 섹션 제목
+        # None  → 구분선
+        # ('key','라벨','색상','이모지')  → 메뉴 버튼
         menus = [
+            ('HEADER', '🏭 생산관리 시스템', '#00695C'),
             ('dashboard',  '대시보드',     '#42A5F5', '🏠'),
-            None,
             ('orders',     '수주 관리',    '#26A69A', '📋'),
             ('plan',       '생산계획',     '#66BB6A', '📅'),
             ('workorder',  '작업지시',     '#FFA726', '🔧'),
             ('production', '생산실적',     '#EF5350', '⚙️'),
             ('inspection', '품질검사',     '#AB47BC', '🔍'),
             ('shipment',   '출하 관리',    '#FF7043', '🚚'),
-            None,
             ('report',     '보고서 / 출력','#FFCA28', '📈'),
             ('statistics', '통계 (일/월/년)','#7E57C2', '📊'),
-            None,
-            # 외주 관리 (Outsourcing)
+            ('HEADER', '🏬 외주관리 시스템', '#0277BD'),
             ('vendors',    '외주업체',     '#00ACC1', '🏬'),
             ('vitems',     '외주품목',     '#0097A7', '🧰'),
             ('po',         '외주발주',     '#039BE5', '🛒'),
             ('settle',     '외주정산',     '#1E88E5', '💵'),
-            None,
         ]
         if self.user['role'] == 'admin':
             menus += [
+                ('HEADER', '⚙ 마스터 관리', '#5D4037'),
                 ('items',      '품목 관리',    '#5C6BC0', '📦'),
                 ('customers',  '고객사 관리',  '#26C6DA', '🏢'),
                 ('equipments', '설비 관리',    '#8D6E63', '🏭'),
             ]
-
-        tk.Label(sb, text="MENU", font=('Malgun Gothic', 11, 'bold'),
-                 fg='#78909C', bg=C['sidebar_bg']).pack(pady=(10, 4))
 
         self._sb_btns = {}
         self._sb_meta = {}  # key -> (color, emoji, label)
         for item in menus:
             if item is None:
                 tk.Frame(sb, bg='#B0BEC5', height=1).pack(fill='x', padx=14, pady=2); continue
+            # 섹션 헤더
+            if isinstance(item, tuple) and item[0] == 'HEADER':
+                _, header_text, header_color = item
+                hdr_box = tk.Frame(sb, bg=header_color, pady=6)
+                hdr_box.pack(fill='x', pady=(8, 4))
+                tk.Label(hdr_box, text=header_text,
+                         font=('Malgun Gothic', 11, 'bold'),
+                         fg='white', bg=header_color).pack()
+                continue
             key, label, color, emoji = item
             self._sb_meta[key] = (color, emoji, label)
 
@@ -2789,7 +2796,7 @@ tbody tr:nth-child(even) { background:#F5F7F8; }
 <style>{CSS}</style></head><body>
 <div class="cover">
   <h1>SEO JIN PRECISION CO.</h1>
-  <h2>생산관리 시스템 — DB 전체 백업</h2>
+  <h2>생산 및 외주 (PROD/OUT) 시스템 — DB 전체 백업</h2>
   <div class="meta">
     파일: production.db<br>생성일시: {now_str}<br>
     총 {total:,} 행 / {len(ORDER)} 테이블
