@@ -1194,7 +1194,8 @@ class ProductionApp:
         canvas.bind_all('<Button-4>', lambda e: canvas.yview_scroll(-1, 'units'))
         canvas.bind_all('<Button-5>', lambda e: canvas.yview_scroll(1, 'units'))
 
-        self._nav('dashboard')
+        # 시작 화면: 메뉴 안내 (사용자가 직접 시스템 선택)
+        self._show_welcome()
 
     def _build_header(self):
         hdr = tk.Frame(self.root, bg=C['header_bg'], height=56); hdr.pack(fill='x'); hdr.pack_propagate(False)
@@ -1252,11 +1253,20 @@ class ProductionApp:
         def _toggle_section(name):
             sec = self._sb_sections.get(name)
             if not sec: return
+            # 다른 섹션은 모두 접기 (한 번에 하나만 펼침)
+            for n, s in self._sb_sections.items():
+                if n != name and s['expanded']:
+                    s['expanded'] = False
+                    s['header'].config(text=f"  ▶  {n}")
+                    s['container'].pack_forget()
+            # 토글
             sec['expanded'] = not sec['expanded']
             arrow = '▼' if sec['expanded'] else '▶'
             sec['header'].config(text=f"  {arrow}  {name}")
             if sec['expanded']:
                 sec['container'].pack(fill='x', after=sec['hdr_box'])
+                # 페이지 영역에 섹션 안내 화면 표시
+                self._show_section_landing(name, sec['color'])
             else:
                 sec['container'].pack_forget()
 
@@ -1268,8 +1278,8 @@ class ProductionApp:
                 _, header_text, header_color = item
                 hdr_box = tk.Frame(sb, bg=header_color)
                 hdr_box.pack(fill='x', pady=(8, 0))
-                # 첫 번째(생산관리)만 기본 펼침, 나머지는 접힘
-                expanded_default = (header_text == '생산관리 시스템')
+                # 모든 섹션 기본 접힘 (사용자가 클릭하여 펼침)
+                expanded_default = False
                 arrow = '▼' if expanded_default else '▶'
                 header_lbl = tk.Label(hdr_box,
                                       text=f"  {arrow}  {header_text}",
@@ -1333,6 +1343,131 @@ class ProductionApp:
             btn.bind('<Leave>', _on_leave)
 
             self._sb_btns[key] = (btn, bar)
+
+    def _show_welcome(self):
+        """초기 화면 — 시스템 선택 안내."""
+        for w in self.page_area.winfo_children(): w.destroy()
+        if hasattr(self, '_page_canvas'):
+            self._page_canvas.yview_moveto(0); self._page_canvas.xview_moveto(0)
+
+        wrap = tk.Frame(self.page_area, bg=C['bg'])
+        wrap.pack(fill='both', expand=True, padx=40, pady=60)
+
+        tk.Label(wrap, text=f"{COMPANY}",
+                 font=('Malgun Gothic', 14, 'bold'),
+                 fg='#80CBC4', bg=C['bg']).pack(pady=(20, 4))
+        tk.Label(wrap, text="생산 및 외주 (PROD/OUT) 시스템",
+                 font=('Malgun Gothic', 28, 'bold'),
+                 fg=C['primary'], bg=C['bg']).pack(pady=(0, 6))
+        tk.Label(wrap, text="Production / Outsourcing Management",
+                 font=('Malgun Gothic', 11),
+                 fg='#90A4AE', bg=C['bg']).pack(pady=(0, 30))
+
+        tk.Frame(wrap, bg='#80CBC4', height=3, width=300).pack(pady=10)
+
+        tk.Label(wrap, text="좌측 메뉴에서 시스템을 선택하세요",
+                 font=('Malgun Gothic', 14),
+                 fg=C['secondary'], bg=C['bg']).pack(pady=(20, 14))
+
+        # 3개 시스템 안내 카드
+        cards_frame = tk.Frame(wrap, bg=C['bg']); cards_frame.pack(pady=20)
+        for title, desc, color, count in [
+            ('생산관리 시스템', '수주부터 출하까지 — 9개 메뉴', '#00695C', 9),
+            ('외주관리 시스템', '외주업체/품목/발주/정산 — 4개', '#0277BD', 4),
+            ('마스터 관리',     '품목/고객사/설비 — 3개', '#5D4037', 3),
+        ]:
+            box = tk.Frame(cards_frame, bg=color, padx=22, pady=18)
+            box.pack(side='left', padx=10)
+            tk.Label(box, text=title, font=('Malgun Gothic', 13, 'bold'),
+                     fg='white', bg=color).pack()
+            tk.Label(box, text=desc, font=('Malgun Gothic', 10),
+                     fg='#E0F2F1', bg=color).pack(pady=(8, 0))
+            tk.Label(box, text=f"📂 {count} 메뉴",
+                     font=('Malgun Gothic', 10, 'bold'),
+                     fg='#FFE082', bg=color).pack(pady=(8, 0))
+
+        tk.Label(wrap,
+                 text=f"\n오늘: {datetime.now().strftime('%Y-%m-%d')}",
+                 font=('Malgun Gothic', 10),
+                 fg='#90A4AE', bg=C['bg']).pack(pady=(40, 0))
+
+    def _show_section_landing(self, section_name, color):
+        """섹션 클릭 시 표시되는 안내 화면."""
+        for w in self.page_area.winfo_children(): w.destroy()
+        if hasattr(self, '_page_canvas'):
+            self._page_canvas.yview_moveto(0); self._page_canvas.xview_moveto(0)
+        self._active_key = None
+        # 모든 메뉴 버튼 비활성 색상으로 리셋
+        for k, (b, bar) in self._sb_btns.items():
+            b.config(bg=C['sidebar_bg'], fg='#000000')
+            bar.config(bg=C['sidebar_bg'])
+
+        # 섹션별 메뉴 목록
+        SEC_MENUS = {
+            '생산관리 시스템': [
+                ('🏠', '대시보드', 'dashboard', '주문생산 현황 한눈에'),
+                ('📋', '수주 관리', 'orders', '고객 주문 등록 / 수정 / 삭제'),
+                ('📅', '생산계획', 'plan', '수주 → 작업지시 자동 생성'),
+                ('🔧', '작업지시', 'workorder', '설비 배정 / 시작 / 완료'),
+                ('⚙️', '생산실적', 'production', '일별 생산수량 / 불량 입력'),
+                ('🔍', '품질검사', 'inspection', '합격 / 불합격 판정'),
+                ('🚚', '출하 관리', 'shipment', '완성품 납품 등록'),
+                ('📈', '보고서 / 출력', 'report', '5종 보고서 + 그래프'),
+                ('📊', '통계 (일/월/년)', 'statistics', '집계 + CSV / PNG / 인쇄'),
+            ],
+            '외주관리 시스템': [
+                ('🏬', '외주업체', 'vendors', '업체 마스터 (등급 A/B/C)'),
+                ('🧰', '외주품목', 'vitems', '외주 가공품목 (표준단가)'),
+                ('🛒', '외주발주', 'po', '발주 + 진행상태 (가장 중요)'),
+                ('💵', '외주정산', 'settle', '업체별 월별 결제 관리'),
+            ],
+            '마스터 관리': [
+                ('📦', '품목 관리', 'items', '부품 마스터'),
+                ('🏢', '고객사 관리', 'customers', '거래처 마스터'),
+                ('🏭', '설비 관리', 'equipments', '28대 설비 마스터'),
+            ],
+        }
+
+        wrap = tk.Frame(self.page_area, bg=C['bg'])
+        wrap.pack(fill='both', expand=True, padx=30, pady=24)
+
+        # 헤더
+        hdr = tk.Frame(wrap, bg=color, padx=24, pady=18)
+        hdr.pack(fill='x', pady=(0, 18))
+        tk.Label(hdr, text=section_name,
+                 font=('Malgun Gothic', 22, 'bold'),
+                 fg='white', bg=color).pack(side='left')
+        tk.Label(hdr, text="아래 메뉴 카드를 클릭하면 해당 페이지로 이동합니다",
+                 font=('Malgun Gothic', 10),
+                 fg='#E0F2F1', bg=color).pack(side='left', padx=20, pady=4)
+
+        # 메뉴 카드 그리드
+        grid = tk.Frame(wrap, bg=C['bg']); grid.pack(fill='both', expand=True)
+        for idx, (emoji, label, key, desc) in enumerate(SEC_MENUS.get(section_name, [])):
+            r, c = idx // 3, idx % 3
+            card = tk.Frame(grid, bg='white', padx=22, pady=18,
+                            cursor='hand2', bd=1, relief='solid',
+                            highlightthickness=2,
+                            highlightbackground='#CFD8DC')
+            card.grid(row=r, column=c, padx=10, pady=10, sticky='ew')
+            grid.grid_columnconfigure(c, weight=1)
+
+            tk.Label(card, text=emoji, font=('Segoe UI Emoji', 32),
+                     bg='white').pack()
+            tk.Label(card, text=label, font=('Malgun Gothic', 13, 'bold'),
+                     fg=C['text'], bg='white').pack(pady=(8, 4))
+            tk.Label(card, text=desc, font=('Malgun Gothic', 9),
+                     fg=C['secondary'], bg='white', wraplength=200).pack()
+
+            def _click(e=None, k=key): self._nav(k)
+            def _enter(e=None, c=card, col=color):
+                c.config(highlightbackground=col)
+            def _leave(e=None, c=card):
+                c.config(highlightbackground='#CFD8DC')
+            for w in (card,) + tuple(card.winfo_children()):
+                w.bind('<Button-1>', _click)
+                w.bind('<Enter>', _enter)
+                w.bind('<Leave>', _leave)
 
     def _nav(self, key):
         self._active_key = key
