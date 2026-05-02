@@ -1233,7 +1233,8 @@ class ProductionApp:
             ('vendors',    '외주업체',     '#00ACC1', '🏬'),
             ('vitems',     '외주품목',     '#0097A7', '🧰'),
             ('po',         '외주발주',     '#039BE5', '🛒'),
-            ('settle',     '외주정산',     '#1E88E5', '💵'),
+            ('receiving',  '입고/납품 관리','#43A047', '📥'),
+            ('settle',     '정산/지급 관리','#1E88E5', '💵'),
         ]
         if self.user['role'] == 'admin':
             menus += [
@@ -1419,7 +1420,8 @@ class ProductionApp:
                 ('🏬', '외주업체', 'vendors', '업체 마스터 (등급 A/B/C)'),
                 ('🧰', '외주품목', 'vitems', '외주 가공품목 (표준단가)'),
                 ('🛒', '외주발주', 'po', '발주 + 진행상태 (가장 중요)'),
-                ('💵', '외주정산', 'settle', '업체별 월별 결제 관리'),
+                ('📥', '입고/납품 관리', 'receiving', '입고/불량/합격 + 납품률 자동'),
+                ('💵', '정산/지급 관리', 'settle', '미지급금 = 자금관리 핵심'),
             ],
             '마스터 관리': [
                 ('📦', '품목 관리', 'items', '부품 마스터'),
@@ -1500,6 +1502,7 @@ class ProductionApp:
             'vendors':    self._pg_vendors,
             'vitems':     self._pg_vitems,
             'po':         self._pg_po,
+            'receiving':  self._pg_po_receiving,
             'settle':     self._pg_settle,
             'users':      self._pg_users,
         }
@@ -4531,9 +4534,181 @@ tbody tr:nth-child(even) { background:#F5F7F8; }
     # ========================================================
     # 외주관리 (4) 외주정산 (Settlement)
     # ========================================================
+    # ========================================================
+    # 외주관리 (4) 입고/납품 관리 (Receiving) — po_receivings 사용
+    # ========================================================
+    def _pg_po_receiving(self):
+        p = self.page_area
+        page_header(p, "입고 / 납품 관리",
+                    "  발주번호 연결 → 입고/불량/합격 기록 → 납품률 자동 계산")
+
+        # 발주 목록 (드롭다운)
+        pos = self.db.query("""
+            SELECT po.id, po.po_no, v.name, vi.name, po.quantity, po.due_date, po.status
+            FROM purchase_orders po
+            LEFT JOIN vendors v ON po.vendor_id=v.id
+            LEFT JOIN vendor_items vi ON po.item_id=vi.id
+            WHERE po.status IN ('발주','진행','지연')
+            ORDER BY po.po_date DESC
+        """)
+        po_disp = [f"{r[1]} | {r[2]} | {r[3]} ({r[4]}EA)" for r in pos]
+
+        f = tk.Frame(p, bg='white', padx=22, pady=18); f.pack(fill='x', padx=20, pady=12)
+        def _lbl(r, c, t):
+            make_label(f, t, size=9, color=C['secondary'], bg='white').grid(
+                row=r, column=c, sticky='w', padx=6, pady=10)
+
+        po_v = tk.StringVar()
+        rd_v = tk.StringVar(value=datetime.now().strftime('%Y-%m-%d'))
+        qty_v = tk.StringVar(value='0')
+        def_v = tk.StringVar(value='0')
+        res_v = tk.StringVar(value='합격')
+        memo_v = tk.StringVar()
+
+        _lbl(0, 0, "발주 *")
+        po_e = make_combo(f, po_v, po_disp, width=46)
+        po_e.grid(row=0, column=1, padx=4, pady=8, columnspan=5, sticky='w')
+
+        _lbl(1, 0, "입고일 *"); rd_e = make_entry(f, rd_v, 14); rd_e.grid(row=1, column=1, padx=4, pady=8)
+        _lbl(1, 2, "입고수량 *"); qty_e = make_entry(f, qty_v, 10); qty_e.grid(row=1, column=3, padx=4, pady=8)
+        _lbl(1, 4, "불량수량");   def_e = make_entry(f, def_v, 10); def_e.grid(row=1, column=5, padx=4, pady=8)
+
+        _lbl(2, 0, "검수 결과")
+        res_e = make_combo(f, res_v, ['합격','불합격','부분합격'], width=12)
+        res_e.grid(row=2, column=1, padx=4, pady=8)
+        _lbl(2, 2, "비고"); memo_e = make_entry(f, memo_v, 36); memo_e.grid(row=2, column=3, padx=4, pady=8, columnspan=3, sticky='w')
+
+        # 납품률 자동 표시
+        rate_lbl = tk.Label(f, text="납품률: -",
+                            font=('Malgun Gothic', 14, 'bold'),
+                            fg=C['accent'], bg='white')
+        rate_lbl.grid(row=2, column=6, columnspan=2, padx=10, sticky='e')
+
+        def _update_rate(*_):
+            try:
+                if po_v.get() not in po_disp:
+                    rate_lbl.config(text="납품률: -"); return
+                idx = po_disp.index(po_v.get())
+                ordered = pos[idx][4]
+                received = int(qty_v.get() or 0)
+                rate = (received * 100 / ordered) if ordered else 0
+                rate_lbl.config(
+                    text=f"납품률: {rate:.1f}% ({received}/{ordered})",
+                    fg=C['success'] if rate >= 100 else (C['warning'] if rate > 0 else C['danger']))
+            except: pass
+        po_e.bind('<<ComboboxSelected>>', _update_rate)
+        qty_v.trace_add('write', _update_rate)
+
+        wrap = tk.Frame(p, bg=C['bg']); wrap.pack(fill='both', expand=True, padx=20, pady=6)
+        cols = ('RID','입고일','발주번호','업체','품목','입고','불량','발주수량','납품률','결과','비고')
+        tree = make_tree(wrap, cols, [0, 100, 130, 130, 140, 60, 60, 80, 80, 80, 160], height=12)
+        tree.column('RID', width=0, stretch=False)
+        edit_id = [None]
+
+        def _read(w, v, default=''):
+            try:
+                x = w.get();
+                if x: return x.strip()
+            except: pass
+            return (v.get() or default).strip()
+
+        def _load():
+            rows = self.db.query("""SELECT r.id, r.receive_date, po.po_no, v.name, vi.name,
+                                           r.qty, r.defect_qty, po.quantity,
+                                           CAST(r.qty * 100.0 / NULLIF(po.quantity,0) AS INTEGER) || '%',
+                                           r.inspect_result, COALESCE(r.memo,'')
+                                    FROM po_receivings r
+                                    LEFT JOIN purchase_orders po ON r.po_id=po.id
+                                    LEFT JOIN vendors v ON po.vendor_id=v.id
+                                    LEFT JOIN vendor_items vi ON po.item_id=vi.id
+                                    ORDER BY r.receive_date DESC, r.id DESC LIMIT 200""")
+            def tag(i, r):
+                if r[9] == '불합격': return 'fail_tag'
+                if r[9] == '부분합격': return 'urgent_tag'
+                return 'pass_tag' if r[9] == '합격' else ('even' if i%2 else '')
+            fill_tree(tree, rows, tag)
+
+        def _on_sel(e):
+            s = tree.selection()
+            if not s: return
+            v = tree.item(s[0])['values']
+            row = self.db.query("SELECT * FROM po_receivings WHERE id=?", (v[0],))[0]
+            edit_id[0] = row['id']
+            rd_v.set(row['receive_date']); qty_v.set(str(row['qty']))
+            def_v.set(str(row['defect_qty'] or 0)); res_v.set(row['inspect_result'] or '합격')
+            memo_v.set(row['memo'] or '')
+            # 발주 매칭
+            for d in po_disp:
+                porow = self.db.query("SELECT po_no FROM purchase_orders WHERE id=?", (row['po_id'],))
+                if porow and d.startswith(porow[0][0]):
+                    po_v.set(d); break
+            _update_rate()
+        tree.bind('<<TreeviewSelect>>', _on_sel)
+
+        def _clear():
+            edit_id[0] = None
+            po_v.set(''); qty_v.set('0'); def_v.set('0')
+            rd_v.set(datetime.now().strftime('%Y-%m-%d')); res_v.set('합격'); memo_v.set('')
+            rate_lbl.config(text="납품률: -")
+
+        def _resolve_po():
+            v = _read(po_e, po_v)
+            if not v or v not in po_disp: return None
+            return pos[po_disp.index(v)][0]
+
+        def _save():
+            if edit_id[0] is not None:
+                if not messagebox.askyesno("확인", "수정 모드. 신규로?"): return
+                _clear(); return
+            pid = _resolve_po()
+            if not pid:
+                messagebox.showerror("오류", "발주를 선택하세요."); return
+            try:
+                q = int(qty_v.get() or 0); d = int(def_v.get() or 0)
+            except:
+                messagebox.showerror("오류", "수량은 정수로 입력하세요."); return
+            self.db.execute("""INSERT INTO po_receivings(po_id,receive_date,qty,defect_qty,inspect_result,memo)
+                            VALUES(?,?,?,?,?,?)""",
+                (pid, _read(rd_e, rd_v), q, d, _read(res_e, res_v), _read(memo_e, memo_v)))
+            # 납품률에 따라 발주 상태 자동 변경
+            tot = self.db.query("SELECT SUM(qty) FROM po_receivings WHERE po_id=?", (pid,))[0][0] or 0
+            ordered = pos[po_disp.index(po_v.get())][4]
+            if tot >= ordered:
+                self.db.execute("UPDATE purchase_orders SET status='완료' WHERE id=?", (pid,))
+            elif tot > 0:
+                self.db.execute("UPDATE purchase_orders SET status='진행' WHERE id=?", (pid,))
+            messagebox.showinfo("완료",
+                f"입고 등록!\n납품: {q}EA / 불량: {d}EA / 누적: {tot}/{ordered}")
+            _clear(); _load()
+
+        def _update():
+            if edit_id[0] is None:
+                messagebox.showwarning("수정", "수정할 행을 선택하세요."); return
+            try: q = int(qty_v.get() or 0); d = int(def_v.get() or 0)
+            except: return
+            self.db.execute("""UPDATE po_receivings SET receive_date=?,qty=?,defect_qty=?,inspect_result=?,memo=?
+                            WHERE id=?""",
+                (_read(rd_e, rd_v), q, d, _read(res_e, res_v), _read(memo_e, memo_v), edit_id[0]))
+            messagebox.showinfo("완료", "입고 수정 완료!"); _clear(); _load()
+
+        def _delete():
+            if edit_id[0] is None:
+                messagebox.showwarning("삭제", "삭제할 행을 선택하세요."); return
+            if not messagebox.askyesno("삭제", "이 입고 기록을 삭제하시겠습니까?"): return
+            self.db.execute("DELETE FROM po_receivings WHERE id=?", (edit_id[0],))
+            messagebox.showinfo("완료", "삭제 완료!"); _clear(); _load()
+
+        bf = tk.Frame(f, bg='white')
+        bf.grid(row=3, column=0, columnspan=8, sticky='e', pady=(12, 0))
+        color_btn(bf, "입고 등록", _save, theme='save').pack(side='right', padx=4)
+        color_btn(bf, "입고 수정", _update, theme='update').pack(side='right', padx=4)
+        color_btn(bf, "입고 삭제", _delete, theme='delete').pack(side='right', padx=4)
+        _load()
+
     def _pg_settle(self):
         p = self.page_area
-        page_header(p, "외주정산", "  업체별 월별 발주 합계 + 결제 관리")
+        page_header(p, "정산 / 지급 관리",
+                    "  업체별 월별 발주합계 + 입고금액 + 미지급금 — 자금관리 핵심")
 
         vendors = self.db.query("SELECT id,code,name FROM vendors WHERE active=1 ORDER BY code")
         v_disp = [f"{r[1]} {r[2]}" for r in vendors]
