@@ -221,6 +221,74 @@ class DB:
             created_at TEXT DEFAULT (datetime('now','localtime')),
             FOREIGN KEY(order_id) REFERENCES orders(id)
         );
+        -- 외주관리 (Outsourcing) ─ 6개 모듈
+        CREATE TABLE IF NOT EXISTS vendors (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            code TEXT UNIQUE NOT NULL,
+            name TEXT NOT NULL,
+            biz_no TEXT DEFAULT '',
+            contact TEXT DEFAULT '',
+            phone TEXT DEFAULT '',
+            email TEXT DEFAULT '',
+            address TEXT DEFAULT '',
+            payment_terms TEXT DEFAULT '월말 결제',
+            price_basis TEXT DEFAULT '단가 기준',
+            grade TEXT DEFAULT 'B',
+            active INTEGER DEFAULT 1,
+            created_at TEXT DEFAULT (datetime('now','localtime'))
+        );
+        CREATE TABLE IF NOT EXISTS vendor_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            code TEXT UNIQUE NOT NULL,
+            name TEXT NOT NULL,
+            spec TEXT DEFAULT '',
+            drawing_no TEXT DEFAULT '',
+            unit TEXT DEFAULT 'EA',
+            std_price REAL DEFAULT 0,
+            main_vendor_id INTEGER,
+            active INTEGER DEFAULT 1,
+            created_at TEXT DEFAULT (datetime('now','localtime')),
+            FOREIGN KEY(main_vendor_id) REFERENCES vendors(id)
+        );
+        CREATE TABLE IF NOT EXISTS purchase_orders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            po_no TEXT UNIQUE NOT NULL,
+            po_date TEXT NOT NULL,
+            vendor_id INTEGER NOT NULL,
+            item_id INTEGER NOT NULL,
+            quantity INTEGER NOT NULL,
+            unit_price REAL DEFAULT 0,
+            total_amount REAL DEFAULT 0,
+            due_date TEXT DEFAULT '',
+            status TEXT DEFAULT '발주',
+            memo TEXT DEFAULT '',
+            created_at TEXT DEFAULT (datetime('now','localtime')),
+            FOREIGN KEY(vendor_id) REFERENCES vendors(id),
+            FOREIGN KEY(item_id) REFERENCES vendor_items(id)
+        );
+        CREATE TABLE IF NOT EXISTS po_receivings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            po_id INTEGER NOT NULL,
+            receive_date TEXT NOT NULL,
+            qty INTEGER DEFAULT 0,
+            defect_qty INTEGER DEFAULT 0,
+            inspect_result TEXT DEFAULT '',
+            memo TEXT DEFAULT '',
+            created_at TEXT DEFAULT (datetime('now','localtime')),
+            FOREIGN KEY(po_id) REFERENCES purchase_orders(id)
+        );
+        CREATE TABLE IF NOT EXISTS po_settlements (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            vendor_id INTEGER NOT NULL,
+            settle_month TEXT NOT NULL,
+            total_amount REAL DEFAULT 0,
+            paid_amount REAL DEFAULT 0,
+            balance REAL DEFAULT 0,
+            paid_date TEXT DEFAULT '',
+            memo TEXT DEFAULT '',
+            created_at TEXT DEFAULT (datetime('now','localtime')),
+            FOREIGN KEY(vendor_id) REFERENCES vendors(id)
+        );
         """)
         # 마이그레이션: customers에 주소 컬럼 없으면 추가
         existing = [r[1] for r in c.execute("PRAGMA table_info(customers)")]
@@ -319,7 +387,35 @@ class DB:
             c.execute("INSERT OR IGNORE INTO equipments(code,name,process,spec) VALUES(?,?,?,?)",
                       (code, name, '복합CNC', item))
 
+        # 외주업체 샘플
+        if c.execute("SELECT COUNT(*) FROM vendors").fetchone()[0] == 0:
+            for v in [
+                ('V001', '대성정밀', '123-45-67890', '김외주', '031-111-2222', 'kim@daesung.kr', '경기 화성시 동탄로', '월말 결제', '단가 기준', 'A'),
+                ('V002', '한국열처리', '234-56-78901', '이대표', '031-222-3333', 'lee@hkht.kr', '경기 화성시 산업로', '월말 결제', '단가 기준', 'A'),
+                ('V003', '광명도금', '345-67-89012', '박과장', '031-333-4444', 'park@kmplate.kr', '경기 시흥시 공단로', '15일 결제', '단가 기준', 'B'),
+            ]:
+                c.execute("""INSERT INTO vendors(code,name,biz_no,contact,phone,email,
+                            address,payment_terms,price_basis,grade) VALUES(?,?,?,?,?,?,?,?,?,?)""", v)
+        # 외주품목 샘플
+        if c.execute("SELECT COUNT(*) FROM vendor_items").fetchone()[0] == 0:
+            for it in [
+                ('VI001', 'CNC 정밀가공', 'Ø80x120', 'DWG-001', 'EA', 12000, 1),
+                ('VI002', '열처리 (담금질)', 'HRC58-62', 'DWG-002', 'EA', 1500, 2),
+                ('VI003', '경질크롬 도금', '두께 30μm', 'DWG-003', 'EA', 800, 3),
+            ]:
+                c.execute("""INSERT INTO vendor_items(code,name,spec,drawing_no,unit,std_price,main_vendor_id)
+                            VALUES(?,?,?,?,?,?,?)""", it)
+
         self.conn.commit()
+
+    def next_po_no(self):
+        today = datetime.now().strftime("%Y%m%d")
+        c = self.conn.cursor()
+        prefix = f"PO-{today}-"
+        last = c.execute("SELECT po_no FROM purchase_orders WHERE po_no LIKE ? ORDER BY po_no DESC LIMIT 1",
+                         (prefix + '%',)).fetchone()
+        n = int(last[0].split('-')[-1]) + 1 if last else 1
+        return f"{prefix}{n:03d}"
 
     def next_order_no(self):
         today = datetime.now().strftime("%Y%m%d")
@@ -1131,6 +1227,12 @@ class ProductionApp:
             ('report',     '보고서 / 출력','#FFCA28', '📈'),
             ('statistics', '통계 (일/월/년)','#7E57C2', '📊'),
             None,
+            # 외주 관리 (Outsourcing)
+            ('vendors',    '외주업체',     '#00ACC1', '🏬'),
+            ('vitems',     '외주품목',     '#0097A7', '🧰'),
+            ('po',         '외주발주',     '#039BE5', '🛒'),
+            ('settle',     '외주정산',     '#1E88E5', '💵'),
+            None,
         ]
         if self.user['role'] == 'admin':
             menus += [
@@ -1207,6 +1309,10 @@ class ProductionApp:
             'items':      self._pg_items,
             'customers':  self._pg_customers,
             'equipments': self._pg_equipments,
+            'vendors':    self._pg_vendors,
+            'vitems':     self._pg_vitems,
+            'po':         self._pg_po,
+            'settle':     self._pg_settle,
             'users':      self._pg_users,
         }
         if key in pages: pages[key]()
@@ -3798,6 +3904,571 @@ tbody tr:nth-child(even) { background:#F5F7F8; }
         color_btn(bf, "설비 추가", _save_new, theme='save').pack(side='right', padx=4)
         color_btn(bf, "설비 수정", _update, theme='update').pack(side='right', padx=4)
         color_btn(bf, "설비 삭제", _delete, theme='delete').pack(side='right', padx=4)
+        _load()
+
+    # ========================================================
+    # 외주관리 (1) 외주업체 (Vendor Master)
+    # ========================================================
+    def _pg_vendors(self):
+        p = self.page_area
+        page_header(p, "외주업체", "  외주업체 마스터 — 한 번 입력 → 모든 업무에서 자동 호출")
+
+        f = tk.Frame(p, bg='white', padx=22, pady=18); f.pack(fill='x', padx=20, pady=12)
+        vs = {k: tk.StringVar() for k in
+              ('code','name','biz_no','contact','phone','email','address','payment_terms','price_basis','grade')}
+        es = {}; edit_id = [None]
+
+        def _lbl(r, c, t):
+            make_label(f, t, size=9, color=C['secondary'], bg='white').grid(
+                row=r, column=c, sticky='w', padx=6, pady=10)
+
+        def _ent(r, c, k, w, **kw):
+            e = make_entry(f, vs[k], w); e.grid(row=r, column=c, padx=4, pady=8, **kw); es[k] = e; return e
+
+        # 코드 자동 생성
+        def _next_code():
+            n = self.db.query("SELECT COUNT(*) FROM vendors")[0][0] + 1
+            return f"V{n:03d}"
+        vs['code'].set(_next_code())
+        vs['payment_terms'].set('월말 결제'); vs['price_basis'].set('단가 기준'); vs['grade'].set('B')
+
+        _lbl(0, 0, "업체코드 *"); _ent(0, 1, 'code', 10)
+        _lbl(0, 2, "업체명 *");    _ent(0, 3, 'name', 22)
+        _lbl(0, 4, "사업자번호");  _ent(0, 5, 'biz_no', 16)
+
+        _lbl(1, 0, "담당자");      _ent(1, 1, 'contact', 12)
+        _lbl(1, 2, "연락처");      _ent(1, 3, 'phone', 16)
+        _lbl(1, 4, "이메일");      _ent(1, 5, 'email', 22)
+
+        _lbl(2, 0, "주소");        _ent(2, 1, 'address', 60, columnspan=5, sticky='w')
+
+        _lbl(3, 0, "결제조건");
+        es['payment_terms'] = make_combo(f, vs['payment_terms'],
+            ['월말 결제','15일 결제','선결제','현금','어음(60일)','어음(90일)'], width=14)
+        es['payment_terms'].grid(row=3, column=1, padx=4, pady=8)
+        _lbl(3, 2, "단가기준");
+        es['price_basis'] = make_combo(f, vs['price_basis'],
+            ['단가 기준','수량 기준','시간 기준','일괄 계약'], width=14)
+        es['price_basis'].grid(row=3, column=3, padx=4, pady=8)
+        _lbl(3, 4, "평가등급");
+        es['grade'] = make_combo(f, vs['grade'], ['A','B','C'], width=6)
+        es['grade'].grid(row=3, column=5, padx=4, pady=8, sticky='w')
+
+        wrap = tk.Frame(p, bg=C['bg']); wrap.pack(fill='both', expand=True, padx=20, pady=6)
+        cols = ('VID','코드','업체명','사업자번호','담당자','연락처','이메일','결제','단가','등급')
+        tree = make_tree(wrap, cols, [0, 70, 160, 110, 80, 120, 160, 90, 90, 50], height=12)
+        tree.column('VID', width=0, stretch=False)
+
+        def _val(k):
+            try:
+                v = es[k].get()
+                if v: return v.strip()
+            except: pass
+            return (vs[k].get() or '').strip()
+
+        def _load():
+            rows = self.db.query("""SELECT id,code,name,biz_no,contact,phone,email,
+                                           payment_terms,price_basis,grade
+                                    FROM vendors WHERE active=1 ORDER BY code""")
+            def tag(i, r):
+                if r[9] == 'A': return 'pass_tag'
+                if r[9] == 'C': return 'urgent_tag'
+                return 'even' if i%2 else ''
+            fill_tree(tree, rows, tag)
+
+        def _on_sel(e):
+            s = tree.selection()
+            if not s: return
+            v = tree.item(s[0])['values']
+            row = self.db.query("SELECT * FROM vendors WHERE id=?", (v[0],))[0]
+            edit_id[0] = row['id']
+            for k in vs: vs[k].set(str(row[k] or ''))
+        tree.bind('<<TreeviewSelect>>', _on_sel)
+
+        def _clear():
+            edit_id[0] = None
+            for k in vs: vs[k].set('')
+            vs['code'].set(_next_code())
+            vs['payment_terms'].set('월말 결제'); vs['price_basis'].set('단가 기준'); vs['grade'].set('B')
+
+        def _save():
+            if edit_id[0] is not None:
+                if not messagebox.askyesno("확인", "수정 모드입니다. 신규 등록으로 전환?"): return
+                _clear(); return
+            code = _val('code'); name = _val('name')
+            if not code or not name:
+                messagebox.showerror("오류", "코드/업체명은 필수입니다."); return
+            dup = self.db.query("SELECT id FROM vendors WHERE code=? AND active=1", (code,))
+            if dup:
+                messagebox.showerror("중복", f"코드 [{code}] 가 이미 있습니다."); return
+            self.db.execute("""INSERT INTO vendors(code,name,biz_no,contact,phone,email,
+                            address,payment_terms,price_basis,grade) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                tuple(_val(k) for k in
+                    ('code','name','biz_no','contact','phone','email','address','payment_terms','price_basis','grade')))
+            messagebox.showinfo("완료", f"외주업체 [{name}] 등록 완료!")
+            _clear(); _load()
+
+        def _update():
+            if edit_id[0] is None:
+                messagebox.showwarning("수정", "수정할 행을 선택하세요."); return
+            self.db.execute("""UPDATE vendors SET code=?,name=?,biz_no=?,contact=?,phone=?,email=?,
+                            address=?,payment_terms=?,price_basis=?,grade=? WHERE id=?""",
+                tuple(_val(k) for k in
+                    ('code','name','biz_no','contact','phone','email','address','payment_terms','price_basis','grade'))
+                + (edit_id[0],))
+            messagebox.showinfo("완료", "외주업체 수정 완료!")
+            _clear(); _load()
+
+        def _delete():
+            if edit_id[0] is None:
+                messagebox.showwarning("삭제", "삭제할 행을 선택하세요."); return
+            if not messagebox.askyesno("삭제", "이 외주업체를 삭제(비활성화)하시겠습니까?"): return
+            self.db.execute("UPDATE vendors SET active=0 WHERE id=?", (edit_id[0],))
+            messagebox.showinfo("완료", "삭제 완료!")
+            _clear(); _load()
+
+        bf = tk.Frame(f, bg='white')
+        bf.grid(row=4, column=0, columnspan=8, sticky='e', pady=(12, 0))
+        color_btn(bf, "업체 등록", _save, theme='save').pack(side='right', padx=4)
+        color_btn(bf, "업체 수정", _update, theme='update').pack(side='right', padx=4)
+        color_btn(bf, "업체 삭제", _delete, theme='delete').pack(side='right', padx=4)
+        _load()
+
+    # ========================================================
+    # 외주관리 (2) 외주품목 (Vendor Items)
+    # ========================================================
+    def _pg_vitems(self):
+        p = self.page_area
+        page_header(p, "외주품목", "  외주 가공품목 마스터 — 표준단가 + 주요 외주업체 연결")
+
+        vendors = self.db.query("SELECT id,code,name FROM vendors WHERE active=1 ORDER BY code")
+        v_disp = ['(없음)'] + [f"{r[1]} {r[2]}" for r in vendors]
+
+        f = tk.Frame(p, bg='white', padx=22, pady=18); f.pack(fill='x', padx=20, pady=12)
+        vs = {k: tk.StringVar() for k in ('code','name','spec','drawing_no','unit','std_price','vendor')}
+        es = {}; edit_id = [None]
+
+        def _lbl(r, c, t):
+            make_label(f, t, size=9, color=C['secondary'], bg='white').grid(
+                row=r, column=c, sticky='w', padx=6, pady=10)
+        def _ent(r, c, k, w, **kw):
+            e = make_entry(f, vs[k], w); e.grid(row=r, column=c, padx=4, pady=8, **kw); es[k] = e; return e
+
+        def _next_code():
+            n = self.db.query("SELECT COUNT(*) FROM vendor_items")[0][0] + 1
+            return f"VI{n:03d}"
+        vs['code'].set(_next_code())
+        vs['unit'].set('EA'); vs['vendor'].set('(없음)')
+
+        _lbl(0, 0, "품목코드 *"); _ent(0, 1, 'code', 10)
+        _lbl(0, 2, "품목명 *");   _ent(0, 3, 'name', 28, columnspan=3, sticky='w')
+        _lbl(1, 0, "규격");       _ent(1, 1, 'spec', 22)
+        _lbl(1, 2, "도면번호");   _ent(1, 3, 'drawing_no', 14)
+        _lbl(1, 4, "단위");
+        es['unit'] = make_combo(f, vs['unit'], ['EA','SET','KG','M','BOX'], width=8)
+        es['unit'].grid(row=1, column=5, padx=4, pady=8, sticky='w')
+        _lbl(2, 0, "표준단가(원)"); _ent(2, 1, 'std_price', 14)
+        _lbl(2, 2, "주요 외주업체");
+        es['vendor'] = make_combo(f, vs['vendor'], v_disp, width=24)
+        es['vendor'].grid(row=2, column=3, padx=4, pady=8, columnspan=3, sticky='w')
+
+        wrap = tk.Frame(p, bg=C['bg']); wrap.pack(fill='both', expand=True, padx=20, pady=6)
+        cols = ('IID','코드','품목명','규격','도면번호','단위','표준단가','주요 업체')
+        tree = make_tree(wrap, cols, [0, 70, 200, 130, 100, 60, 100, 160], height=12)
+        tree.column('IID', width=0, stretch=False)
+
+        def _val(k):
+            try:
+                v = es[k].get();
+                if v: return v.strip()
+            except: pass
+            return (vs[k].get() or '').strip()
+
+        def _load():
+            rows = self.db.query("""SELECT vi.id, vi.code, vi.name, vi.spec, vi.drawing_no,
+                                           vi.unit, vi.std_price, COALESCE(v.name,'-')
+                                    FROM vendor_items vi
+                                    LEFT JOIN vendors v ON vi.main_vendor_id=v.id
+                                    WHERE vi.active=1 ORDER BY vi.code""")
+            disp = []
+            for r in rows:
+                d = list(r); d[6] = f"{int(d[6] or 0):,}"
+                disp.append(d)
+            fill_tree(tree, disp)
+
+        def _on_sel(e):
+            s = tree.selection()
+            if not s: return
+            v = tree.item(s[0])['values']
+            row = self.db.query("SELECT * FROM vendor_items WHERE id=?", (v[0],))[0]
+            edit_id[0] = row['id']
+            for k in ('code','name','spec','drawing_no','unit'): vs[k].set(str(row[k] or ''))
+            vs['std_price'].set(str(int(row['std_price'] or 0)))
+            mv = row['main_vendor_id']
+            if mv:
+                vrow = self.db.query("SELECT code,name FROM vendors WHERE id=?", (mv,))
+                if vrow: vs['vendor'].set(f"{vrow[0][0]} {vrow[0][1]}")
+            else: vs['vendor'].set('(없음)')
+        tree.bind('<<TreeviewSelect>>', _on_sel)
+
+        def _clear():
+            edit_id[0] = None
+            for k in vs: vs[k].set('')
+            vs['code'].set(_next_code()); vs['unit'].set('EA'); vs['vendor'].set('(없음)')
+            vs['std_price'].set('0')
+
+        def _resolve_vendor():
+            v = _val('vendor')
+            if not v or v == '(없음)': return None
+            row = self.db.query("SELECT id FROM vendors WHERE code=? AND active=1",
+                                (v.split()[0],))
+            return row[0][0] if row else None
+
+        def _save():
+            if edit_id[0] is not None:
+                if not messagebox.askyesno("확인", "수정 모드. 신규로?"): return
+                _clear(); return
+            code = _val('code'); name = _val('name')
+            if not code or not name:
+                messagebox.showerror("오류", "코드/품목명은 필수입니다."); return
+            try: sp = float(_val('std_price') or 0)
+            except: sp = 0
+            self.db.execute("""INSERT INTO vendor_items(code,name,spec,drawing_no,unit,std_price,main_vendor_id)
+                            VALUES(?,?,?,?,?,?,?)""",
+                (code, name, _val('spec'), _val('drawing_no'), _val('unit') or 'EA', sp, _resolve_vendor()))
+            messagebox.showinfo("완료", f"외주품목 [{name}] 등록 완료!")
+            _clear(); _load()
+
+        def _update():
+            if edit_id[0] is None:
+                messagebox.showwarning("수정", "수정할 행을 선택하세요."); return
+            try: sp = float(_val('std_price') or 0)
+            except: sp = 0
+            self.db.execute("""UPDATE vendor_items SET code=?,name=?,spec=?,drawing_no=?,unit=?,std_price=?,main_vendor_id=?
+                            WHERE id=?""",
+                (_val('code'), _val('name'), _val('spec'), _val('drawing_no'),
+                 _val('unit') or 'EA', sp, _resolve_vendor(), edit_id[0]))
+            messagebox.showinfo("완료", "수정 완료!")
+            _clear(); _load()
+
+        def _delete():
+            if edit_id[0] is None:
+                messagebox.showwarning("삭제", "삭제할 행을 선택하세요."); return
+            if not messagebox.askyesno("삭제", "이 품목을 삭제하시겠습니까?"): return
+            self.db.execute("UPDATE vendor_items SET active=0 WHERE id=?", (edit_id[0],))
+            messagebox.showinfo("완료", "삭제 완료!"); _clear(); _load()
+
+        bf = tk.Frame(f, bg='white')
+        bf.grid(row=3, column=0, columnspan=8, sticky='e', pady=(12, 0))
+        color_btn(bf, "품목 등록", _save, theme='save').pack(side='right', padx=4)
+        color_btn(bf, "품목 수정", _update, theme='update').pack(side='right', padx=4)
+        color_btn(bf, "품목 삭제", _delete, theme='delete').pack(side='right', padx=4)
+        _load()
+
+    # ========================================================
+    # 외주관리 (3) 외주발주 (Purchase Orders) — 가장 중요
+    # ========================================================
+    def _pg_po(self):
+        p = self.page_area
+        page_header(p, "외주발주", "  외주발주 + 입고/검수 — 납기일+진행상태 = 생산관리 핵심")
+
+        vendors = self.db.query("SELECT id,code,name FROM vendors WHERE active=1 ORDER BY code")
+        v_disp = [f"{r[1]} {r[2]}" for r in vendors]
+        items = self.db.query("SELECT id,code,name,std_price FROM vendor_items WHERE active=1 ORDER BY code")
+        i_disp = [f"{r[1]} {r[2]}" for r in items]
+
+        f = tk.Frame(p, bg='white', padx=22, pady=18); f.pack(fill='x', padx=20, pady=12)
+        def _lbl(r, c, t):
+            make_label(f, t, size=9, color=C['secondary'], bg='white').grid(
+                row=r, column=c, sticky='w', padx=6, pady=10)
+
+        po_v = tk.StringVar(value=self.db.next_po_no())
+        date_v = tk.StringVar(value=datetime.now().strftime('%Y-%m-%d'))
+        ven_v = tk.StringVar()
+        item_v = tk.StringVar()
+        qty_v = tk.StringVar(value='1')
+        price_v = tk.StringVar(value='0')
+        due_v = tk.StringVar(value=(datetime.now()+timedelta(days=14)).strftime('%Y-%m-%d'))
+        st_v = tk.StringVar(value='발주')
+        memo_v = tk.StringVar()
+
+        _lbl(0, 0, "발주번호"); po_e = make_entry(f, po_v, 16); po_e.grid(row=0, column=1, padx=4, pady=8)
+        _lbl(0, 2, "발주일");   date_e = make_entry(f, date_v, 14); date_e.grid(row=0, column=3, padx=4, pady=8)
+        _lbl(0, 4, "납기일");   due_e = make_entry(f, due_v, 14); due_e.grid(row=0, column=5, padx=4, pady=8)
+        _lbl(1, 0, "외주업체 *"); ven_e = make_combo(f, ven_v, v_disp, width=22); ven_e.grid(row=1, column=1, padx=4, pady=8, columnspan=2, sticky='w')
+        _lbl(1, 3, "품목 *");     item_e = make_combo(f, item_v, i_disp, width=22); item_e.grid(row=1, column=4, padx=4, pady=8, columnspan=2, sticky='w')
+        _lbl(2, 0, "수량 *");     qty_e = make_entry(f, qty_v, 10); qty_e.grid(row=2, column=1, padx=4, pady=8)
+        _lbl(2, 2, "단가(원)");   price_e = make_entry(f, price_v, 12); price_e.grid(row=2, column=3, padx=4, pady=8)
+        _lbl(2, 4, "진행상태");   st_e = make_combo(f, st_v, ['발주','진행','완료','지연','취소'], width=10); st_e.grid(row=2, column=5, padx=4, pady=8)
+        _lbl(3, 0, "비고");       memo_e = make_entry(f, memo_v, 50); memo_e.grid(row=3, column=1, padx=4, pady=8, columnspan=5, sticky='w')
+
+        total_lbl = tk.Label(f, text="합계: 0원", font=('Malgun Gothic', 14, 'bold'),
+                             fg=C['primary'], bg='white')
+        total_lbl.grid(row=2, column=6, columnspan=2, padx=10, sticky='e')
+
+        def _calc(*_):
+            try:
+                q = int(qty_v.get() or 0); pr = float(price_v.get() or 0)
+                total_lbl.config(text=f"합계: {int(q*pr):,}원")
+            except: pass
+        qty_v.trace_add('write', _calc); price_v.trace_add('write', _calc)
+
+        # 품목 선택 시 표준단가 자동 입력
+        def _on_item(e=None):
+            if item_v.get() in i_disp:
+                idx = i_disp.index(item_v.get())
+                price_v.set(str(int(items[idx][3] or 0))); _calc()
+        item_e.bind('<<ComboboxSelected>>', _on_item)
+
+        wrap = tk.Frame(p, bg=C['bg']); wrap.pack(fill='both', expand=True, padx=20, pady=6)
+        cols = ('PID','발주번호','발주일','업체','품목','수량','단가','합계','납기일','상태')
+        tree = make_tree(wrap, cols, [0, 130, 100, 130, 160, 60, 80, 100, 100, 70], height=12)
+        tree.column('PID', width=0, stretch=False)
+        edit_id = [None]
+
+        def _read(w, v):
+            try:
+                x = w.get();
+                if x: return x.strip()
+            except: pass
+            return (v.get() or '').strip()
+
+        def _load():
+            rows = self.db.query("""SELECT po.id, po.po_no, po.po_date, v.name, vi.name,
+                                           po.quantity, po.unit_price, po.total_amount,
+                                           po.due_date, po.status
+                                    FROM purchase_orders po
+                                    LEFT JOIN vendors v ON po.vendor_id=v.id
+                                    LEFT JOIN vendor_items vi ON po.item_id=vi.id
+                                    ORDER BY po.po_date DESC, po.id DESC LIMIT 200""")
+            today = datetime.now().strftime('%Y-%m-%d')
+            disp = []
+            for r in rows:
+                d = list(r)
+                d[6] = f"{int(d[6] or 0):,}"; d[7] = f"{int(d[7] or 0):,}"
+                disp.append(d)
+            def tag(i, r):
+                # 지연/완료 색상
+                st = r[9]
+                if st == '완료': return 'pass_tag'
+                if st == '지연': return 'fail_tag'
+                if st == '취소': return 'urgent_tag'
+                # 납기 임박
+                if r[8] and r[8] < today and st != '완료':
+                    return 'fail_tag'
+                return 'even' if i%2 else ''
+            fill_tree(tree, disp, tag)
+
+        def _on_sel(e):
+            s = tree.selection()
+            if not s: return
+            v = tree.item(s[0])['values']
+            row = self.db.query("SELECT * FROM purchase_orders WHERE id=?", (v[0],))[0]
+            edit_id[0] = row['id']
+            po_v.set(row['po_no']); date_v.set(row['po_date'] or '')
+            due_v.set(row['due_date'] or ''); st_v.set(row['status'])
+            qty_v.set(str(row['quantity'])); price_v.set(str(int(row['unit_price'] or 0)))
+            memo_v.set(row['memo'] or '')
+            for d in v_disp:
+                vrow = self.db.query("SELECT id FROM vendors WHERE id=?", (row['vendor_id'],))
+                if vrow:
+                    vinfo = self.db.query("SELECT code,name FROM vendors WHERE id=?", (row['vendor_id'],))[0]
+                    if d.startswith(vinfo[0]): ven_v.set(d); break
+            for d in i_disp:
+                irow = self.db.query("SELECT code FROM vendor_items WHERE id=?", (row['item_id'],))
+                if irow and d.startswith(irow[0][0]): item_v.set(d); break
+            _calc()
+        tree.bind('<<TreeviewSelect>>', _on_sel)
+
+        def _clear():
+            edit_id[0] = None
+            po_v.set(self.db.next_po_no())
+            date_v.set(datetime.now().strftime('%Y-%m-%d'))
+            due_v.set((datetime.now()+timedelta(days=14)).strftime('%Y-%m-%d'))
+            ven_v.set(''); item_v.set('')
+            qty_v.set('1'); price_v.set('0'); st_v.set('발주'); memo_v.set('')
+            _calc()
+
+        def _resolve():
+            vid = iid = None
+            vsel = _read(ven_e, ven_v)
+            if vsel and vsel in v_disp:
+                vid = vendors[v_disp.index(vsel)][0]
+            isel = _read(item_e, item_v)
+            if isel and isel in i_disp:
+                iid = items[i_disp.index(isel)][0]
+            return vid, iid
+
+        def _save():
+            if edit_id[0] is not None:
+                if not messagebox.askyesno("확인", "수정 모드. 신규로?"): return
+                _clear(); return
+            vid, iid = _resolve()
+            if not vid or not iid:
+                messagebox.showerror("오류", "외주업체와 품목을 선택하세요."); return
+            try: q = int(qty_v.get()); pr = float(price_v.get() or 0)
+            except: messagebox.showerror("오류", "수량/단가 형식 오류"); return
+            self.db.execute("""INSERT INTO purchase_orders(po_no,po_date,vendor_id,item_id,quantity,
+                            unit_price,total_amount,due_date,status,memo)
+                            VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                (po_v.get(), date_v.get(), vid, iid, q, pr, q*pr, due_v.get(), st_v.get(), memo_v.get()))
+            messagebox.showinfo("완료", f"외주발주 [{po_v.get()}] 등록!")
+            _clear(); _load()
+
+        def _update():
+            if edit_id[0] is None:
+                messagebox.showwarning("수정", "수정할 행을 선택하세요."); return
+            vid, iid = _resolve()
+            try: q = int(qty_v.get()); pr = float(price_v.get() or 0)
+            except: messagebox.showerror("오류", "수량/단가 형식 오류"); return
+            self.db.execute("""UPDATE purchase_orders SET po_no=?,po_date=?,vendor_id=?,item_id=?,
+                            quantity=?,unit_price=?,total_amount=?,due_date=?,status=?,memo=? WHERE id=?""",
+                (po_v.get(), date_v.get(), vid, iid, q, pr, q*pr, due_v.get(), st_v.get(), memo_v.get(), edit_id[0]))
+            messagebox.showinfo("완료", "발주 수정 완료!"); _clear(); _load()
+
+        def _delete():
+            if edit_id[0] is None:
+                messagebox.showwarning("삭제", "삭제할 행을 선택하세요."); return
+            if not messagebox.askyesno("삭제", "이 발주를 삭제하시겠습니까?"): return
+            self.db.execute("DELETE FROM purchase_orders WHERE id=?", (edit_id[0],))
+            messagebox.showinfo("완료", "삭제 완료!"); _clear(); _load()
+
+        bf = tk.Frame(f, bg='white')
+        bf.grid(row=4, column=0, columnspan=8, sticky='e', pady=(12, 0))
+        color_btn(bf, "발주 등록", _save, theme='save').pack(side='right', padx=4)
+        color_btn(bf, "발주 수정", _update, theme='update').pack(side='right', padx=4)
+        color_btn(bf, "발주 삭제", _delete, theme='delete').pack(side='right', padx=4)
+        _load()
+
+    # ========================================================
+    # 외주관리 (4) 외주정산 (Settlement)
+    # ========================================================
+    def _pg_settle(self):
+        p = self.page_area
+        page_header(p, "외주정산", "  업체별 월별 발주 합계 + 결제 관리")
+
+        vendors = self.db.query("SELECT id,code,name FROM vendors WHERE active=1 ORDER BY code")
+        v_disp = [f"{r[1]} {r[2]}" for r in vendors]
+
+        f = tk.Frame(p, bg='white', padx=22, pady=18); f.pack(fill='x', padx=20, pady=12)
+        def _lbl(r, c, t):
+            make_label(f, t, size=9, color=C['secondary'], bg='white').grid(row=r, column=c, sticky='w', padx=6, pady=10)
+
+        ven_v = tk.StringVar(); ym_v = tk.StringVar(value=datetime.now().strftime('%Y-%m'))
+        amt_v = tk.StringVar(value='0'); paid_v = tk.StringVar(value='0')
+        pd_v = tk.StringVar(); memo_v = tk.StringVar()
+
+        _lbl(0, 0, "외주업체 *");
+        ven_e = make_combo(f, ven_v, v_disp, width=22); ven_e.grid(row=0, column=1, padx=4, pady=8, columnspan=2, sticky='w')
+        _lbl(0, 3, "정산월 *");  ym_e = make_entry(f, ym_v, 12); ym_e.grid(row=0, column=4, padx=4, pady=8)
+        _lbl(0, 5, "지급일");    pd_e = make_entry(f, pd_v, 14); pd_e.grid(row=0, column=6, padx=4, pady=8)
+
+        _lbl(1, 0, "발주합계(원)"); amt_e = make_entry(f, amt_v, 14); amt_e.grid(row=1, column=1, padx=4, pady=8)
+        _lbl(1, 2, "지급액");      paid_e = make_entry(f, paid_v, 14); paid_e.grid(row=1, column=3, padx=4, pady=8)
+
+        bal_lbl = tk.Label(f, text="잔액: 0원", font=('Malgun Gothic', 14, 'bold'),
+                           fg=C['accent'], bg='white')
+        bal_lbl.grid(row=1, column=4, columnspan=3, padx=10, sticky='e')
+
+        _lbl(2, 0, "비고"); memo_e = make_entry(f, memo_v, 50); memo_e.grid(row=2, column=1, padx=4, pady=8, columnspan=5, sticky='w')
+
+        def _calc(*_):
+            try:
+                a = float(amt_v.get() or 0); pd = float(paid_v.get() or 0)
+                bal_lbl.config(text=f"잔액: {int(a-pd):,}원")
+            except: pass
+        amt_v.trace_add('write', _calc); paid_v.trace_add('write', _calc)
+
+        # 자동 발주 합계 계산
+        def _auto_calc(*_):
+            if ven_v.get() not in v_disp: return
+            vid = vendors[v_disp.index(ven_v.get())][0]
+            ym = (ym_v.get() or '').strip()
+            if len(ym) < 7: return
+            r = self.db.query("""SELECT COALESCE(SUM(total_amount),0) FROM purchase_orders
+                WHERE vendor_id=? AND substr(po_date,1,7)=?""", (vid, ym))
+            amt_v.set(str(int(r[0][0] or 0)))
+        ven_e.bind('<<ComboboxSelected>>', _auto_calc)
+        ym_v.trace_add('write', _auto_calc)
+
+        wrap = tk.Frame(p, bg=C['bg']); wrap.pack(fill='both', expand=True, padx=20, pady=6)
+        cols = ('SID','업체','정산월','발주합계','지급액','잔액','지급일','비고')
+        tree = make_tree(wrap, cols, [0, 160, 90, 110, 110, 110, 100, 200], height=12)
+        tree.column('SID', width=0, stretch=False)
+        edit_id = [None]
+
+        def _load():
+            rows = self.db.query("""SELECT s.id, v.name, s.settle_month, s.total_amount,
+                                           s.paid_amount, s.balance, s.paid_date, COALESCE(s.memo,'')
+                                    FROM po_settlements s LEFT JOIN vendors v ON s.vendor_id=v.id
+                                    ORDER BY s.settle_month DESC, s.id DESC LIMIT 100""")
+            disp = []
+            for r in rows:
+                d = list(r)
+                for i in (3,4,5): d[i] = f"{int(d[i] or 0):,}"
+                disp.append(d)
+            def tag(i, r):
+                if r[5] == '0': return 'pass_tag'
+                return 'urgent_tag' if i%2 else ''
+            fill_tree(tree, disp)
+
+        def _on_sel(e):
+            s = tree.selection()
+            if not s: return
+            v = tree.item(s[0])['values']
+            row = self.db.query("SELECT * FROM po_settlements WHERE id=?", (v[0],))[0]
+            edit_id[0] = row['id']
+            ym_v.set(row['settle_month']); pd_v.set(row['paid_date'] or '')
+            amt_v.set(str(int(row['total_amount'] or 0)))
+            paid_v.set(str(int(row['paid_amount'] or 0)))
+            memo_v.set(row['memo'] or '')
+            vrow = self.db.query("SELECT code,name FROM vendors WHERE id=?", (row['vendor_id'],))
+            if vrow:
+                for d in v_disp:
+                    if d.startswith(vrow[0][0]): ven_v.set(d); break
+            _calc()
+        tree.bind('<<TreeviewSelect>>', _on_sel)
+
+        def _clear():
+            edit_id[0] = None
+            ven_v.set(''); ym_v.set(datetime.now().strftime('%Y-%m'))
+            amt_v.set('0'); paid_v.set('0'); pd_v.set(''); memo_v.set('')
+
+        def _save():
+            if edit_id[0] is not None:
+                if not messagebox.askyesno("확인", "수정 모드. 신규로?"): return
+                _clear(); return
+            if ven_v.get() not in v_disp:
+                messagebox.showerror("오류", "외주업체를 선택하세요."); return
+            vid = vendors[v_disp.index(ven_v.get())][0]
+            try:
+                a = float(amt_v.get() or 0); pd = float(paid_v.get() or 0)
+            except: messagebox.showerror("오류", "금액 형식 오류"); return
+            self.db.execute("""INSERT INTO po_settlements(vendor_id,settle_month,total_amount,
+                            paid_amount,balance,paid_date,memo) VALUES(?,?,?,?,?,?,?)""",
+                (vid, ym_v.get(), a, pd, a-pd, pd_v.get(), memo_v.get()))
+            messagebox.showinfo("완료", "정산 등록!"); _clear(); _load()
+
+        def _update():
+            if edit_id[0] is None: messagebox.showwarning("수정", "선택 필요"); return
+            try: a = float(amt_v.get() or 0); pd = float(paid_v.get() or 0)
+            except: return
+            self.db.execute("""UPDATE po_settlements SET settle_month=?,total_amount=?,paid_amount=?,
+                            balance=?,paid_date=?,memo=? WHERE id=?""",
+                (ym_v.get(), a, pd, a-pd, pd_v.get(), memo_v.get(), edit_id[0]))
+            messagebox.showinfo("완료", "수정 완료!"); _clear(); _load()
+
+        def _delete():
+            if edit_id[0] is None: messagebox.showwarning("삭제", "선택 필요"); return
+            if not messagebox.askyesno("삭제", "삭제하시겠습니까?"): return
+            self.db.execute("DELETE FROM po_settlements WHERE id=?", (edit_id[0],))
+            messagebox.showinfo("완료", "삭제 완료!"); _clear(); _load()
+
+        bf = tk.Frame(f, bg='white')
+        bf.grid(row=3, column=0, columnspan=8, sticky='e', pady=(12, 0))
+        color_btn(bf, "정산 등록", _save, theme='save').pack(side='right', padx=4)
+        color_btn(bf, "정산 수정", _update, theme='update').pack(side='right', padx=4)
+        color_btn(bf, "정산 삭제", _delete, theme='delete').pack(side='right', padx=4)
         _load()
 
     # ========================================================
