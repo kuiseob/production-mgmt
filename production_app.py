@@ -1218,7 +1218,7 @@ class ProductionApp:
         # None  → 구분선
         # ('key','라벨','색상','이모지')  → 메뉴 버튼
         menus = [
-            ('HEADER', '🏭 생산관리 시스템', '#00695C'),
+            ('HEADER', '생산관리 시스템', '#00695C'),
             ('dashboard',  '대시보드',     '#42A5F5', '🏠'),
             ('orders',     '수주 관리',    '#26A69A', '📋'),
             ('plan',       '생산계획',     '#66BB6A', '📅'),
@@ -1228,7 +1228,7 @@ class ProductionApp:
             ('shipment',   '출하 관리',    '#FF7043', '🚚'),
             ('report',     '보고서 / 출력','#FFCA28', '📈'),
             ('statistics', '통계 (일/월/년)','#7E57C2', '📊'),
-            ('HEADER', '🏬 외주관리 시스템', '#0277BD'),
+            ('HEADER', '외주관리 시스템', '#0277BD'),
             ('vendors',    '외주업체',     '#00ACC1', '🏬'),
             ('vitems',     '외주품목',     '#0097A7', '🧰'),
             ('po',         '외주발주',     '#039BE5', '🛒'),
@@ -1236,7 +1236,7 @@ class ProductionApp:
         ]
         if self.user['role'] == 'admin':
             menus += [
-                ('HEADER', '⚙ 마스터 관리', '#5D4037'),
+                ('HEADER', '마스터 관리', '#5D4037'),
                 ('items',      '품목 관리',    '#5C6BC0', '📦'),
                 ('customers',  '고객사 관리',  '#26C6DA', '🏢'),
                 ('equipments', '설비 관리',    '#8D6E63', '🏭'),
